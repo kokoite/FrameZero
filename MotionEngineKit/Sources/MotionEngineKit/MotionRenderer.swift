@@ -82,25 +82,31 @@ public struct MotionRuntimeView: View {
             return AnyView(applyCommonModifiers(
                 Text(engine.styleString(for: node, "text") ?? "")
                     .font(font(for: engine.styleString(for: node, "font")))
-                    .foregroundStyle(color(for: engine.styleString(for: node, "foregroundColor")) ?? .primary),
+                    .foregroundStyle(color(for: engine.styleString(for: node, "foregroundColor")) ?? .clear),
                 node: node
             ))
         case .circle:
             return AnyView(applyCommonModifiers(
                 Circle()
-                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .blue),
-                node: node
+                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .clear),
+                node: node,
+                drawsBackground: false
             ))
         case .roundedRectangle:
             return AnyView(applyCommonModifiers(
                 RoundedRectangle(cornerRadius: engine.styleNumber(for: node, "cornerRadius") ?? 12)
-                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .blue),
-                node: node
+                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .clear),
+                node: node,
+                drawsBackground: false
             ))
         }
     }
 
-    private func applyCommonModifiers<Content: View>(_ content: Content, node: MotionNode) -> AnyView {
+    private func applyCommonModifiers<Content: View>(
+        _ content: Content,
+        node: MotionNode,
+        drawsBackground: Bool = true
+    ) -> AnyView {
         let width = engine.layoutNumber(for: node, "width").map { CGFloat($0) }
         let height = engine.layoutNumber(for: node, "height").map { CGFloat($0) }
         let offsetX = engine.number(for: node.id, property: "offset.x", default: 0)
@@ -111,7 +117,7 @@ public struct MotionRuntimeView: View {
         let stretchY = engine.number(for: node.id, property: "scale.y", default: 1)
         let scaleX = scale * stretchX
         let scaleY = scale * stretchY
-        let opacity = min(max(engine.number(for: node.id, property: "opacity", default: 1), 0), 1)
+        let opacity = MotionRenderStyle.visibleOpacity(engine.number(for: node.id, property: "opacity", default: 1))
         let padding = engine.layoutNumber(for: node, "padding") ?? 0
         let cornerRadius = engine.styleNumber(for: node, "cornerRadius") ?? 0
         let backgroundColor = color(for: engine.styleString(for: node, "backgroundColor"))
@@ -128,7 +134,7 @@ public struct MotionRuntimeView: View {
                 maxHeight: fillsScreen ? .infinity : nil
             )
             .background {
-                if let backgroundColor {
+                if drawsBackground, let backgroundColor {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(backgroundColor)
                 }

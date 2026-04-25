@@ -25,7 +25,7 @@ public struct MotionEffectsOverlay: View {
         ZStack {
             ForEach(engine.slingshotTrails()) { trail in
                 let pouch = point(x: trail.currentX, y: trail.currentY, in: size)
-                let glowColor = MotionRenderStyle.color(for: trail.color) ?? Color.cyan
+                let glowColor = MotionRenderStyle.color(for: trail.color) ?? Color.clear
                 let glowSize = trail.glowBaseSize + (trail.glowGrowth * trail.charge)
 
                 Circle()
@@ -48,7 +48,7 @@ public struct MotionEffectsOverlay: View {
         ZStack {
             ForEach(engine.slingshotTrajectoryPoints()) { point in
                 Circle()
-                    .fill(MotionRenderStyle.color(for: point.color)?.opacity(point.opacity) ?? Color.yellow.opacity(point.opacity))
+                    .fill(MotionRenderStyle.color(for: point.color)?.opacity(point.opacity) ?? Color.clear)
                     .frame(width: CGFloat(point.size), height: CGFloat(point.size))
                     .position(self.point(x: point.x, y: point.y, in: size))
             }
@@ -81,7 +81,7 @@ struct MotionDrivenViewModifier: ViewModifier {
         let scale = engine.number(for: nodeID, property: "scale", default: 1)
         let stretchX = engine.number(for: nodeID, property: "scale.x", default: 1)
         let stretchY = engine.number(for: nodeID, property: "scale.y", default: 1)
-        let opacity = min(max(engine.number(for: nodeID, property: "opacity", default: 1), 0), 1)
+        let opacity = MotionRenderStyle.visibleOpacity(engine.number(for: nodeID, property: "opacity", default: 1))
 
         var transformed = AnyView(content
             .frame(width: width, height: height)

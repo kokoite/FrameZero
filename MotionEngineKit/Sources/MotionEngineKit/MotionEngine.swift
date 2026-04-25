@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import os
 
 struct MotionChannelKey: Hashable {
     let nodeID: NodeID
@@ -68,7 +69,7 @@ struct MotionTrailRuntime: Identifiable {
     let anchorY: Double
     let currentX: Double
     let currentY: Double
-    let color: String
+    let color: String?
     let opacity: Double
     let charge: Double
     let glowBaseSize: Double
@@ -86,7 +87,7 @@ struct MotionTrajectoryPointRuntime: Identifiable {
     let id: String
     let x: Double
     let y: Double
-    let color: String
+    let color: String?
     let size: Double
     let opacity: Double
 }
@@ -146,7 +147,6 @@ private enum MotionRuntimeDefaults {
     static let launchPowerExponent = 0.5
     static let chargeStretchX = 0.16
     static let chargeStretchY = -0.08
-    static let trailColor = "#38BDF8"
     static let trailChargeCurve = 0.7
     static let trailOpacityBase = 0.2
     static let trailOpacityRange = 0.75
@@ -159,7 +159,6 @@ private enum MotionRuntimeDefaults {
     static let glowStrokeWidthBase = 2.0
     static let glowStrokeWidthRange = 7.0
     static let glowInnerScale = 0.78
-    static let trajectoryColor = "#FDE68A"
     static let trajectoryPoints = 9
     static let trajectoryStep = 0.12
     static let trajectoryMinStep = 0.016
@@ -212,12 +211,20 @@ private struct EngineSnapshot {
     let activeJiggles: [MotionJiggleRuntime]
     let activeSlingshotDrags: [NodeID: ActiveSlingshotDrag]
     let activeProjectiles: [NodeID: ActiveProjectile]
+    let activeGlobalDragNodeID: NodeID?
     let idleElapsed: CFTimeInterval
     let viewport: MotionViewport?
+    let editableDocumentURL: URL?
+    let lastLoadedModificationDate: Date?
+    let hotReloadPath: String?
 }
 
 @MainActor
 public final class MotionEngine {
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "MotionEngineKit", category: "MotionEngine")
+
+    public var isDebugLoggingEnabled = false
+
     private(set) var document: MotionDocument?
     public private(set) var errorMessage: String?
     public private(set) var statusMessage: String = "Loading"
@@ -259,11 +266,18 @@ public final class MotionEngine {
 
     public func load(data: Data) throws {
         let decoded = try JSONDecoder().decode(MotionDocument.self, from: data)
-        try install(decoded)
-        editableDocumentURL = nil
-        lastLoadedModificationDate = nil
-        hotReloadPath = nil
-        statusMessage = "Loaded motion document"
+        let snapshot = snapshot()
+
+        do {
+            try install(decoded)
+            editableDocumentURL = nil
+            lastLoadedModificationDate = nil
+            hotReloadPath = nil
+            statusMessage = "Loaded motion document"
+        } catch {
+            restore(snapshot)
+            throw error
+        }
     }
 
     public func load(jsonString: String) throws {
@@ -277,21 +291,28 @@ public final class MotionEngine {
     public func load(fileURL: URL, hotReload: Bool = false) throws {
         let data = try Data(contentsOf: fileURL)
         let decoded = try JSONDecoder().decode(MotionDocument.self, from: data)
-        try install(decoded)
+        let snapshot = snapshot()
 
-        if hotReload {
-            editableDocumentURL = fileURL
-            hotReloadPath = fileURL.path
-            lastLoadedModificationDate = try fileURL
-                .resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate
-        } else {
-            editableDocumentURL = nil
-            hotReloadPath = nil
-            lastLoadedModificationDate = nil
+        do {
+            try install(decoded)
+
+            if hotReload {
+                editableDocumentURL = fileURL
+                hotReloadPath = fileURL.path
+                lastLoadedModificationDate = try fileURL
+                    .resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate
+            } else {
+                editableDocumentURL = nil
+                hotReloadPath = nil
+                lastLoadedModificationDate = nil
+            }
+
+            statusMessage = "Loaded \(fileURL.lastPathComponent)"
+        } catch {
+            restore(snapshot)
+            throw error
         }
-
-        statusMessage = "Loaded \(fileURL.lastPathComponent)"
     }
 
     public func resetPhase1Demo() {
@@ -529,7 +550,7 @@ public final class MotionEngine {
                 anchorY: drag.anchorY,
                 currentX: drag.currentX,
                 currentY: drag.currentY,
-                color: trail?.color ?? MotionRuntimeDefaults.trailColor,
+                color: trail?.color,
                 opacity: (trail?.opacityBase ?? MotionRuntimeDefaults.trailOpacityBase)
                     + ((trail?.opacityRange ?? MotionRuntimeDefaults.trailOpacityRange) * visualCharge),
                 charge: visualCharge,
@@ -549,7 +570,7 @@ public final class MotionEngine {
     func slingshotTrajectoryPoints() -> [MotionTrajectoryPointRuntime] {
         activeSlingshotDrags.values.flatMap { drag in
             let spec = drag.binding.trajectory
-            let color = spec?.color ?? MotionRuntimeDefaults.trajectoryColor
+            let color = spec?.color
             let configuredPointCount = max(spec?.points ?? MotionRuntimeDefaults.trajectoryPoints, 0)
             let charge = pow(
                 min(max(drag.charge, 0), 1),
@@ -891,8 +912,12 @@ public final class MotionEngine {
             activeJiggles: activeJiggles,
             activeSlingshotDrags: activeSlingshotDrags,
             activeProjectiles: activeProjectiles,
+            activeGlobalDragNodeID: activeGlobalDragNodeID,
             idleElapsed: idleElapsed,
-            viewport: viewport
+            viewport: viewport,
+            editableDocumentURL: editableDocumentURL,
+            lastLoadedModificationDate: lastLoadedModificationDate,
+            hotReloadPath: hotReloadPath
         )
     }
 
@@ -919,8 +944,12 @@ public final class MotionEngine {
         activeJiggles = snapshot.activeJiggles
         activeSlingshotDrags = snapshot.activeSlingshotDrags
         activeProjectiles = snapshot.activeProjectiles
+        activeGlobalDragNodeID = snapshot.activeGlobalDragNodeID
         idleElapsed = snapshot.idleElapsed
         viewport = snapshot.viewport
+        editableDocumentURL = snapshot.editableDocumentURL
+        lastLoadedModificationDate = snapshot.lastLoadedModificationDate
+        hotReloadPath = snapshot.hotReloadPath
     }
 
     private func install(_ document: MotionDocument) throws {
@@ -945,15 +974,20 @@ public final class MotionEngine {
         for node in document.nodes {
             try validateFiniteNumbers(in: node.layout, context: "layout for node '\(node.id)'")
             try validateFiniteNumbers(in: node.style, context: "style for node '\(node.id)'")
+            try validateNodeStyle(node)
             try validateFiniteNumbers(in: node.presentation, context: "presentation for node '\(node.id)'")
 
             for childID in node.children where nodesByID[childID] == nil {
                 throw MotionRuntimeError.validation("Node '\(node.id)' references missing child '\(childID)'")
             }
             for childID in node.children {
+                if let existingParent = parentByID[childID] {
+                    throw MotionRuntimeError.validation("Node '\(childID)' is listed as a child of both '\(existingParent)' and '\(node.id)'")
+                }
                 parentByID[childID] = node.id
             }
         }
+        try validateTree(rootID: document.root)
 
         machinesByID = Dictionary(uniqueKeysWithValues: document.machines.map { ($0.id, $0) })
         triggersByID = Dictionary(uniqueKeysWithValues: document.triggers.map { ($0.id, $0) })
@@ -1121,6 +1155,11 @@ public final class MotionEngine {
     }
 
     private func validateNodeSelector(_ selector: MotionNodeSelector, context: String) throws {
+        let selectedModes = [selector.id != nil, selector.role != nil].filter { $0 }.count
+        guard selectedModes == 1 else {
+            throw MotionRuntimeError.validation("Node selector in \(context) must include exactly one of id or role")
+        }
+
         if let id = selector.id {
             guard nodesByID[id] != nil else {
                 throw MotionRuntimeError.validation("Node selector in \(context) references missing node '\(id)'")
@@ -1262,6 +1301,7 @@ public final class MotionEngine {
     private func validateTrail(_ trail: MotionTrailSpec?, bindingID: String) throws {
         guard let trail else { return }
 
+        try validateOptionalColor(trail.color, "trail.color", bindingID: bindingID)
         try validateOptionalPositive(trail.chargeCurve, "trail.chargeCurve", bindingID: bindingID)
         try validateOptionalFinite(trail.opacityBase, "trail.opacityBase", bindingID: bindingID)
         try validateOptionalFinite(trail.opacityRange, "trail.opacityRange", bindingID: bindingID)
@@ -1279,6 +1319,7 @@ public final class MotionEngine {
     private func validateTrajectory(_ trajectory: MotionTrajectorySpec?, bindingID: String) throws {
         guard let trajectory else { return }
 
+        try validateOptionalColor(trajectory.color, "trajectory.color", bindingID: bindingID)
         try validateOptionalPositive(trajectory.chargeCurve, "trajectory.chargeCurve", bindingID: bindingID)
         try validateOptionalFinite(trajectory.pointCountBaseFactor, "trajectory.pointCountBaseFactor", bindingID: bindingID)
         try validateOptionalFinite(trajectory.pointCountChargeFactor, "trajectory.pointCountChargeFactor", bindingID: bindingID)
@@ -1299,6 +1340,14 @@ public final class MotionEngine {
     private func validateOptionalPositive(_ value: Double?, _ label: String, bindingID: String) throws {
         if let value, (!value.isFinite || value <= 0) {
             throw MotionRuntimeError.validation("Drag binding '\(bindingID)' \(label) must be positive and finite")
+        }
+    }
+
+    private func validateOptionalColor(_ value: String?, _ label: String, bindingID: String) throws {
+        guard let value else { return }
+
+        if !MotionRenderStyle.isValidHexColor(value) {
+            throw MotionRuntimeError.validation("Drag binding '\(bindingID)' \(label) must be a 6-digit hex color")
         }
     }
 
@@ -1388,6 +1437,54 @@ public final class MotionEngine {
         }
     }
 
+    private func validateNodeStyle(_ node: MotionNode) throws {
+        for key in ["backgroundColor", "foregroundColor"] where node.style[key] != nil {
+            guard let value = node.style[key]?.string else {
+                throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a 6-digit hex color string")
+            }
+
+            guard MotionRenderStyle.isValidHexColor(value) else {
+                throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a 6-digit hex color")
+            }
+        }
+    }
+
+    private func validateTree(rootID: NodeID) throws {
+        enum VisitState {
+            case visiting
+            case visited
+        }
+
+        var states: [NodeID: VisitState] = [:]
+
+        func visit(_ nodeID: NodeID, path: [NodeID]) throws {
+            if states[nodeID] == .visiting {
+                throw MotionRuntimeError.validation("Node tree contains a cycle: \((path + [nodeID]).joined(separator: " -> "))")
+            }
+
+            if states[nodeID] == .visited {
+                return
+            }
+
+            guard let node = nodesByID[nodeID] else {
+                throw MotionRuntimeError.validation("Node tree references missing node '\(nodeID)'")
+            }
+
+            states[nodeID] = .visiting
+            for childID in node.children {
+                try visit(childID, path: path + [nodeID])
+            }
+            states[nodeID] = .visited
+        }
+
+        try visit(rootID, path: [])
+
+        let unreachable = Set(nodesByID.keys).subtracting(states.keys)
+        if let nodeID = unreachable.sorted().first {
+            throw MotionRuntimeError.validation("Node '\(nodeID)' is not reachable from root '\(rootID)'")
+        }
+    }
+
     private func validateNumericValue(_ value: MotionValue, context: String) throws {
         switch value {
         case let .number(number):
@@ -1438,6 +1535,11 @@ public final class MotionEngine {
             }
 
             do {
+                if isDebugLoggingEnabled {
+                    let elapsed = stateElapsedByMachine[machine.id] ?? 0
+                    let triggerType = triggersByID[triggerID]?.type.rawValue ?? "unknown"
+                    Self.logger.info("[FrameZeroEngine] fire machine=\(machine.id, privacy: .public) transition=\(transition.id, privacy: .public) from=\(transition.from, privacy: .public) to=\(transition.to, privacy: .public) trigger=\(triggerID, privacy: .public) triggerType=\(triggerType, privacy: .public) stateElapsed=\(elapsed, privacy: .public) idleElapsed=\(self.idleElapsed, privacy: .public) configuredDelay=\((transition.delay ?? 0), privacy: .public)")
+                }
                 currentStates[machine.id] = transition.to
                 try applyState(machineID: machine.id, stateID: transition.to, transition: transition, snap: false)
                 stateElapsedByMachine[machine.id] = 0
@@ -1522,7 +1624,7 @@ public final class MotionEngine {
 
             for key in keys {
                 let rule = transitionRule(for: key, transition: transition)
-                let motion = rule?.motion ?? defaultTransitionMotion(for: transition)
+                let motion = rule?.motion ?? defaultTransitionMotion()
                 var channel = channels[key] ?? MotionChannel(
                     current: target,
                     velocity: 0,
@@ -1572,9 +1674,8 @@ public final class MotionEngine {
         return nil
     }
 
-    private func defaultTransitionMotion(for transition: MotionTransition?) -> MotionSpec {
-        guard transition != nil else { return .immediate }
-        return .spring(SpringSpec(type: "spring", response: 0.35, dampingFraction: 0.9))
+    private func defaultTransitionMotion() -> MotionSpec {
+        .immediate
     }
 
     private func refreshResolvedTargets(snap: Bool) {
@@ -1702,6 +1803,10 @@ public final class MotionEngine {
     }
 
     private func resolve(_ selector: MotionPropertySelector) throws -> [MotionChannelKey] {
+        guard !selector.properties.isEmpty else {
+            throw MotionRuntimeError.validation("Property selector must include at least one property")
+        }
+
         let nodeIDs = try resolveNodeIDs(selector)
 
         return nodeIDs.flatMap { nodeID in
@@ -1712,6 +1817,11 @@ public final class MotionEngine {
     }
 
     private func resolveNodeIDs(_ selector: MotionPropertySelector) throws -> [NodeID] {
+        let selectedModes = [selector.id != nil, selector.role != nil].filter { $0 }.count
+        guard selectedModes == 1 else {
+            throw MotionRuntimeError.validation("Property selector must include exactly one of id or role")
+        }
+
         if let id = selector.id {
             guard nodesByID[id] != nil else {
                 throw MotionRuntimeError.validation("Selector references missing node '\(id)'")
@@ -1734,6 +1844,11 @@ public final class MotionEngine {
     }
 
     private func resolveNodeIDs(_ selector: MotionNodeSelector) throws -> [NodeID] {
+        let selectedModes = [selector.id != nil, selector.role != nil].filter { $0 }.count
+        guard selectedModes == 1 else {
+            throw MotionRuntimeError.validation("Node selector must include exactly one of id or role")
+        }
+
         if let id = selector.id {
             guard nodesByID[id] != nil else {
                 throw MotionRuntimeError.validation("Node selector references missing node '\(id)'")

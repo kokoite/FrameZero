@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MotionEngineKit
+import os
 
 private enum SampleTypography {
     static let title = Font.system(size: 25, weight: .semibold)
@@ -21,14 +22,20 @@ private enum SampleTypography {
 }
 
 struct ContentView: View {
-    private static let engine = MotionEngine()
+    private static let engine: MotionEngine = {
+        let engine = MotionEngine()
+        engine.isDebugLoggingEnabled = true
+        return engine
+    }()
+    private static let logger = Logger(subsystem: "com.pranjal.agarwal.demofirstapp.AnimationEngine", category: "FrameZeroPlayground")
 
     @State private var frame = 0
-    @State private var clip = MotionClip.demo
+    @State private var clip = MotionClip.wideArcPhase
     @State private var savedPhases = MotionClip.samples
-    @State private var animationPhaseIDs: [UUID] = []
-    @State private var selectedPhaseID: UUID?
+    @State private var animationPhaseIDs: [UUID] = MotionClip.defaultTimelineIDs
+    @State private var selectedPhaseID: UUID? = MotionClip.wideArcPhase.id
     @State private var status = "Ready"
+    @State private var autoPreviewTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { proxy in
@@ -46,13 +53,17 @@ struct ContentView: View {
                     controlPanel
                         .padding(.horizontal, 14)
                         .padding(.bottom, proxy.safeAreaInsets.bottom + 12)
-                        .frame(maxHeight: min(405, proxy.size.height * 0.46))
+                        .frame(maxHeight: min(440, proxy.size.height * 0.48))
                 }
             }
             .background(Color(red: 0.055, green: 0.055, blue: 0.075))
         }
         .onAppear {
-            playCurrentPhase()
+            playAnimation()
+        }
+        .onChange(of: clip) { _, _ in
+            syncSelectedPhase()
+            scheduleAutoPreview()
         }
         .background {
             DisplayLinkTicker { dt in
@@ -72,6 +83,7 @@ struct ContentView: View {
                 originY: currentPhaseStart.y,
                 deltaX: clip.x,
                 deltaY: clip.y,
+                targetOpacity: clip.opacity,
                 motionKind: clip.motionKind,
                 arcDirection: clip.arcDirection,
                 arcBend: clip.arcBend
@@ -100,7 +112,7 @@ struct ContentView: View {
             Spacer(minLength: 8)
 
             Button {
-                playCurrentPhase()
+                playPrimaryAction()
             } label: {
                 Image(systemName: "play.fill")
                     .font(.system(size: 15, weight: .bold))
@@ -140,7 +152,7 @@ struct ContentView: View {
                 .accessibilityLabel("Add Phase")
 
                 Button("Play") {
-                    playCurrentPhase()
+                    playPrimaryAction()
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.cyan)
@@ -148,6 +160,8 @@ struct ContentView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
+                    editingPhaseBanner
+
                     TextField("Phase name", text: $clip.name)
                         .textFieldStyle(.plain)
                         .font(SampleTypography.input)
@@ -161,21 +175,28 @@ struct ContentView: View {
                         }
 
                     modeControls
+                    behaviorControl
                     phaseReadout
+                    timelineMap
 
                     VStack(spacing: 9) {
-                        ControlSlider(title: "Move X", value: $clip.x, range: -150...150, suffix: "pt")
-                        ControlSlider(title: "Move Y", value: $clip.y, range: -210...210, suffix: "pt")
+                        ControlSlider(title: "X", value: $clip.x, range: -150...150, suffix: "pt")
+                        ControlSlider(title: "Y", value: $clip.y, range: -210...210, suffix: "pt")
                         if clip.motionKind == .arc {
-                            ControlSlider(title: "Arc Bend", value: $clip.arcBend, range: 0.05...1.4, suffix: "x")
+                            ControlSlider(title: "Bend", value: $clip.arcBend, range: 0.05...1.4, suffix: "x")
                         }
                         ControlSlider(title: "Rotate", value: $clip.rotation, range: -360...360, suffix: "deg")
                         ControlSlider(title: "Scale", value: $clip.scale, range: 0.2...1.8, suffix: "x")
-                        ControlSlider(title: "Opacity", value: $clip.opacity, range: 0.1...1, suffix: "")
-                        ControlSlider(title: "Phase Duration", value: $clip.phaseDuration, range: 0.08...2.5, suffix: "s")
+                        ControlSlider(title: "Opacity", value: $clip.opacity, range: 0...1, suffix: "")
+                        nextModeControl
+                        if clip.usesTimedNext {
+                            ControlSlider(title: "Next Phase At", value: $clip.phaseDuration, range: 0.08...2.5, suffix: "s")
+                        }
                         ControlSlider(title: "Start Delay", value: $clip.startDelay, range: 0...2, suffix: "s")
-                        ControlSlider(title: "Response", value: $clip.response, range: 0.15...1.2, suffix: "s")
-                        ControlSlider(title: "Damping", value: $clip.damping, range: 0.35...1.25, suffix: "")
+                        ControlSlider(title: motionTimingTitle, value: $clip.response, range: 0.15...1.2, suffix: "s")
+                        if clip.motionBehavior == .spring {
+                            ControlSlider(title: "Damping", value: $clip.damping, range: 0.35...1.25, suffix: "")
+                        }
                     }
 
                     savedPhasesView
@@ -191,12 +212,75 @@ struct ContentView: View {
         }
     }
 
+    private var nextModeControl: some View {
+        HStack(spacing: 8) {
+            Text("Next Phase")
+                .font(SampleTypography.controlLabel)
+                .foregroundStyle(.white.opacity(0.9))
+
+            Spacer()
+
+            Button("Auto") {
+                clip.usesTimedNext = false
+            }
+            .buttonStyle(.plain)
+            .font(SampleTypography.smallLabel)
+            .foregroundStyle(clip.usesTimedNext ? .white.opacity(0.65) : .white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(clip.usesTimedNext ? .white.opacity(0.07) : .cyan.opacity(0.42), in: RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(clip.usesTimedNext ? .white.opacity(0.1) : .cyan.opacity(0.72), lineWidth: 1)
+            }
+
+            Button("At Time") {
+                clip.usesTimedNext = true
+            }
+            .buttonStyle(.plain)
+            .font(SampleTypography.smallLabel)
+            .foregroundStyle(clip.usesTimedNext ? .white : .white.opacity(0.65))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(clip.usesTimedNext ? .cyan.opacity(0.42) : .white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(clip.usesTimedNext ? .cyan.opacity(0.72) : .white.opacity(0.1), lineWidth: 1)
+            }
+        }
+    }
+
+    private var editingPhaseBanner: some View {
+        HStack(spacing: 8) {
+            Label(editingPhaseTitle, systemImage: "scope")
+                .font(SampleTypography.sectionTitle)
+                .foregroundStyle(.white)
+
+            Spacer(minLength: 8)
+
+            Text("\(clip.motionKind.title) · \(clip.motionBehavior.title)")
+                .font(SampleTypography.value)
+                .foregroundStyle(.cyan.opacity(0.92))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.cyan.opacity(0.26), lineWidth: 1)
+        }
+    }
+
+    private var motionTimingTitle: String {
+        clip.motionBehavior == .spring ? "Spring Response" : "Duration"
+    }
+
     private var modeControls: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(MotionKind.allCases) { kind in
                     SegmentPill(title: kind.title, isSelected: clip.motionKind == kind, color: kind.color) {
-                        clip.motionKind = kind
+                        setMotionKind(kind)
                     }
                 }
             }
@@ -206,7 +290,7 @@ struct ContentView: View {
             HStack(spacing: 4) {
                 ForEach(ArcDirectionChoice.allCases) { direction in
                     SegmentPill(title: direction.title, isSelected: clip.arcDirection == direction, color: .cyan) {
-                        clip.arcDirection = direction
+                        setArcDirection(direction)
                     }
                 }
             }
@@ -217,12 +301,32 @@ struct ContentView: View {
         }
     }
 
+    private var behaviorControl: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Behavior")
+                .font(SampleTypography.controlLabel)
+                .foregroundStyle(.white.opacity(0.9))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(MotionBehavior.allCases) { behavior in
+                        SegmentPill(title: behavior.title, isSelected: clip.motionBehavior == behavior, color: .cyan) {
+                            setMotionBehavior(behavior)
+                        }
+                    }
+                }
+                .padding(4)
+                .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
     private var phaseReadout: some View {
         HStack(spacing: 8) {
-            Text("Origin \(n(currentPhaseStart.x)), \(n(currentPhaseStart.y))")
+            Text("Start \(n(currentPhaseStart.x)), \(n(currentPhaseStart.y))")
             Image(systemName: "arrow.right")
                 .font(.system(size: 10, weight: .bold))
-            Text("Delta \(n(clip.x)), \(n(clip.y))")
+            Text("Move \(n(clip.x)), \(n(clip.y))")
             Image(systemName: "equal")
                 .font(.system(size: 9, weight: .bold))
             Text("End \(n(currentPhaseEnd.x)), \(n(currentPhaseEnd.y))")
@@ -233,6 +337,52 @@ struct ContentView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var timelineMap: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Timeline", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(SampleTypography.sectionTitle)
+                    .foregroundStyle(.white.opacity(0.92))
+
+                Spacer()
+
+                Text(timelineTotalLabel)
+                    .font(SampleTypography.value)
+                    .foregroundStyle(.white.opacity(0.64))
+            }
+
+            if animationPhases.isEmpty {
+                Text("No animation timeline yet. Add phases to see how the full motion is scheduled.")
+                    .font(SampleTypography.caption)
+                    .foregroundStyle(.white.opacity(0.58))
+            } else {
+                VStack(spacing: 7) {
+                    ForEach(Array(animationPhases.enumerated()), id: \.element.id) { index, phase in
+                        let start = timelineStartTime(forPhaseAt: index)
+                        let end = start + phase.timelinePreviewDuration
+                        PhaseTimelineRow(
+                            index: index + 1,
+                            phase: phase,
+                            start: start,
+                            end: end,
+                            total: max(totalTimelineDuration, 0.01),
+                            isSelected: selectedPhaseID == phase.id
+                        ) {
+                            selectPhase(phase)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        }
     }
 
     private var savedPhasesView: some View {
@@ -253,9 +403,11 @@ struct ContentView: View {
                 HStack(spacing: 8) {
                     ForEach(savedPhases) { saved in
                         Button {
+                            syncSelectedPhase()
                             selectedPhaseID = nil
                             clip = saved
                             play(saved, from: currentPhaseStart)
+                            Self.logger.info("[FrameZeroEditor] selected saved phase phaseName=\(saved.name, privacy: .public) kind=\(saved.motionKind.title, privacy: .public) behavior=\(saved.motionBehavior.title, privacy: .public)")
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(saved.name)
@@ -367,12 +519,38 @@ struct ContentView: View {
     }
 
     private var animationPhases: [MotionClip] {
-        animationPhaseIDs.compactMap { id in savedPhases.first(where: { $0.id == id }) }
+        animationPhaseIDs.compactMap { id in
+            if id == selectedPhaseID {
+                var liveClip = clip
+                liveClip.id = id
+                return liveClip
+            }
+
+            return savedPhases.first(where: { $0.id == id })
+        }
     }
 
     private var selectedPhaseIndex: Int? {
         guard let selectedPhaseID else { return nil }
         return animationPhaseIDs.firstIndex(of: selectedPhaseID)
+    }
+
+    private var editingPhaseTitle: String {
+        if let selectedPhaseIndex {
+            return "Editing Phase \(selectedPhaseIndex + 1)"
+        }
+
+        return "Editing Draft Phase"
+    }
+
+    private var totalTimelineDuration: Double {
+        animationPhases.enumerated().reduce(0) { total, item in
+            max(total, timelineStartTime(forPhaseAt: item.offset) + item.element.timelinePreviewDuration)
+        }
+    }
+
+    private var timelineTotalLabel: String {
+        animationPhases.contains { !$0.usesTimedNext } ? "auto" : "\(timeLabel(totalTimelineDuration))s"
     }
 
     private var currentPhaseStart: MotionEndpoint {
@@ -403,6 +581,40 @@ struct ContentView: View {
         status = "Saved phase \(clip.name)"
     }
 
+    private func syncSelectedPhase() {
+        guard let selectedPhaseID,
+              let index = savedPhases.firstIndex(where: { $0.id == selectedPhaseID })
+        else {
+            return
+        }
+
+        var synced = clip
+        synced.id = selectedPhaseID
+        savedPhases[index] = synced
+    }
+
+    private func setMotionKind(_ kind: MotionKind) {
+        let old = clip.motionKind
+        clip.motionKind = kind
+        logEditorMutation("kind", from: old.title, to: kind.title)
+    }
+
+    private func setArcDirection(_ direction: ArcDirectionChoice) {
+        let old = clip.arcDirection
+        clip.arcDirection = direction
+        logEditorMutation("arcDirection", from: old.rawValue, to: direction.rawValue)
+    }
+
+    private func setMotionBehavior(_ behavior: MotionBehavior) {
+        let old = clip.motionBehavior
+        clip.motionBehavior = behavior
+        logEditorMutation("behavior", from: old.title, to: behavior.title)
+    }
+
+    private func logEditorMutation(_ field: String, from oldValue: String, to newValue: String) {
+        Self.logger.info("[FrameZeroEditor] \(editingPhaseTitle, privacy: .public) phaseName=\(clip.name, privacy: .public) field=\(field, privacy: .public) from=\(oldValue, privacy: .public) to=\(newValue, privacy: .public)")
+    }
+
     private func addPhase() {
         if selectedPhaseID != nil {
             saveCurrent()
@@ -419,18 +631,30 @@ struct ContentView: View {
     }
 
     private func selectPhase(_ item: MotionClip) {
+        syncSelectedPhase()
         selectedPhaseID = item.id
         clip = item
         status = "Editing \(item.name)"
+        Self.logger.info("[FrameZeroEditor] selected \(self.editingPhaseTitle, privacy: .public) phaseName=\(item.name, privacy: .public) kind=\(item.motionKind.title, privacy: .public) behavior=\(item.motionBehavior.title, privacy: .public)")
     }
 
     private func playCurrentPhase() {
         play(clip, from: currentPhaseStart)
     }
 
+    private func playPrimaryAction() {
+        if animationPhaseIDs.isEmpty {
+            playCurrentPhase()
+        } else {
+            playAnimation()
+        }
+    }
+
     private func play(_ item: MotionClip, from start: MotionEndpoint = .origin) {
         do {
-            try Self.engine.load(jsonString: MotionDocumentFactory.document(for: [item], initial: start))
+            let document = MotionDocumentFactory.document(for: [item], initial: start)
+            logPlayRequest(name: item.name, clips: [item], initial: start, document: document)
+            try Self.engine.load(jsonString: document)
             status = "Playing \(item.name)"
             frame += 1
         } catch {
@@ -465,7 +689,9 @@ struct ContentView: View {
         guard !clips.isEmpty else { return }
 
         do {
-            try Self.engine.load(jsonString: MotionDocumentFactory.document(for: clips))
+            let document = MotionDocumentFactory.document(for: clips)
+            logPlayRequest(name: "animation", clips: clips, initial: .origin, document: document)
+            try Self.engine.load(jsonString: document)
             status = "Playing animation: \(clips.map(\.name).joined(separator: " -> "))"
             frame += 1
         } catch {
@@ -473,8 +699,41 @@ struct ContentView: View {
         }
     }
 
+    private func logPlayRequest(name: String, clips: [MotionClip], initial: MotionEndpoint, document: String) {
+        Self.logger.info("Loading \(name, privacy: .public) with \(clips.count, privacy: .public) phase(s), jsonBytes=\(document.utf8.count, privacy: .public)")
+
+        let summaries = MotionDocumentFactory.debugPhaseSummaries(for: clips, initial: initial)
+        for summary in summaries {
+            Self.logger.info("\(summary, privacy: .public)")
+        }
+
+        let timeline = MotionDocumentFactory.debugTimelineSummaries(for: clips, initial: initial)
+        for line in timeline {
+            Self.logger.info("\(line, privacy: .public)")
+        }
+    }
+
+    private func scheduleAutoPreview() {
+        autoPreviewTask?.cancel()
+        autoPreviewTask = Task { @MainActor in
+            guard !Task.isCancelled else { return }
+            playPrimaryAction()
+        }
+    }
+
     private func startEndpoint(forPhaseAt index: Int) -> MotionEndpoint {
         endpoint(after: Array(animationPhases.prefix(index)))
+    }
+
+    private func timelineStartTime(forPhaseAt index: Int) -> Double {
+        let clips = animationPhases
+        guard clips.indices.contains(index) else { return 0 }
+
+        let previousTiming = clips.prefix(index).reduce(0) { total, phase in
+            total + phase.startDelay + phase.timelinePreviewDuration
+        }
+
+        return previousTiming + clips[index].startDelay
     }
 
     private func endpoint(after clips: [MotionClip]) -> MotionEndpoint {
@@ -483,8 +742,91 @@ struct ContentView: View {
         }
     }
 
+    private func timeLabel(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
     private func n(_ value: Double) -> String {
         String(format: "%.0f", value)
+    }
+}
+
+private struct PhaseTimelineRow: View {
+    let index: Int
+    let phase: MotionClip
+    let start: Double
+    let end: Double
+    let total: Double
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("\(index)")
+                        .font(SampleTypography.value)
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(phase.motionKind.color.opacity(0.32), in: Circle())
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(phase.name)
+                            .font(SampleTypography.smallLabel)
+                            .foregroundStyle(.white.opacity(0.9))
+                            .lineLimit(1)
+
+                        Text("\(phase.motionKind.title) · \(phase.motionBehavior.title) · \(time(start))s to \(time(end))s")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+
+                    Spacer(minLength: 6)
+
+                    Text(phase.nextLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.56))
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.white.opacity(0.08))
+
+                        Capsule()
+                            .fill(phase.motionKind.color.opacity(0.72))
+                            .frame(width: barWidth(in: proxy.size.width))
+                            .offset(x: barOffset(in: proxy.size.width))
+                    }
+                }
+                .frame(height: 5)
+            }
+            .padding(8)
+            .background(
+                isSelected ? Color.cyan.opacity(0.13) : Color.white.opacity(0.045),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.cyan.opacity(0.34) : Color.white.opacity(0.08), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func time(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private func barOffset(in width: CGFloat) -> CGFloat {
+        guard total > 0 else { return 0 }
+        return width * CGFloat(max(start / total, 0))
+    }
+
+    private func barWidth(in width: CGFloat) -> CGFloat {
+        guard total > 0 else { return width }
+        let normalized = max((end - start) / total, 0.02)
+        return width * CGFloat(normalized)
     }
 }
 
@@ -493,13 +835,37 @@ private struct ControlSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let suffix: String
+    let help: String?
+
+    init(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        suffix: String,
+        help: String? = nil
+    ) {
+        self.title = title
+        self._value = value
+        self.range = range
+        self.suffix = suffix
+        self.help = help
+    }
 
     var body: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                Text(title)
-                    .font(SampleTypography.controlLabel)
-                    .foregroundStyle(.white.opacity(0.9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(SampleTypography.controlLabel)
+                        .foregroundStyle(.white.opacity(0.9))
+
+                    if let help {
+                        Text(help)
+                            .font(SampleTypography.smallLabel)
+                            .foregroundStyle(.white.opacity(0.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 Spacer()
 
@@ -590,7 +956,9 @@ private struct MotionClip: Identifiable, Equatable {
     var scale: Double
     var opacity: Double
     var phaseDuration: Double
+    var usesTimedNext: Bool
     var startDelay: Double
+    var motionBehavior: MotionBehavior
     var response: Double
     var damping: Double
 
@@ -606,13 +974,55 @@ private struct MotionClip: Identifiable, Equatable {
         scale: 1,
         opacity: 1,
         phaseDuration: 0.34,
+        usesTimedNext: false,
         startDelay: 0,
+        motionBehavior: .spring,
         response: 0.5,
         damping: 0.72
     )
 
+    static let wideArcPhase = MotionClip(
+        id: UUID(),
+        name: "Wide Arc Launch",
+        motionKind: .arc,
+        arcDirection: .clockwise,
+        arcBend: 0.56,
+        x: 150,
+        y: -120,
+        rotation: 0,
+        scale: 1,
+        opacity: 1,
+        phaseDuration: 1,
+        usesTimedNext: true,
+        startDelay: 0,
+        motionBehavior: .spring,
+        response: 1,
+        damping: 0.72
+    )
+
+    static let scaleJigglePhase = MotionClip(
+        id: UUID(),
+        name: "Scale Jiggle",
+        motionKind: .jiggle,
+        arcDirection: .clockwise,
+        arcBend: 0.56,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        scale: 1.2,
+        opacity: 1,
+        phaseDuration: 1,
+        usesTimedNext: false,
+        startDelay: 0,
+        motionBehavior: .spring,
+        response: 1,
+        damping: 0.64
+    )
+
     static let samples = [
         demo,
+        wideArcPhase,
+        scaleJigglePhase,
         MotionClip(
             id: UUID(),
             name: "Tiny Panic",
@@ -625,14 +1035,16 @@ private struct MotionClip: Identifiable, Equatable {
             scale: 1,
             opacity: 1,
             phaseDuration: 0.7,
+            usesTimedNext: false,
             startDelay: 0,
+            motionBehavior: .spring,
             response: 0.32,
             damping: 0.6
         ),
         MotionClip(
             id: UUID(),
             name: "Sink Fade",
-            motionKind: .spring,
+            motionKind: .move,
             arcDirection: .anticlockwise,
             arcBend: 0.72,
             x: -72,
@@ -641,10 +1053,17 @@ private struct MotionClip: Identifiable, Equatable {
             scale: 0.45,
             opacity: 0.28,
             phaseDuration: 0.45,
+            usesTimedNext: false,
             startDelay: 0,
+            motionBehavior: .spring,
             response: 0.62,
             damping: 0.82
         )
+    ]
+
+    static let defaultTimelineIDs = [
+        wideArcPhase.id,
+        scaleJigglePhase.id
     ]
 
     func withNewID() -> MotionClip {
@@ -659,12 +1078,21 @@ private struct MotionClip: Identifiable, Equatable {
         copy.name = draftName
         copy.x = 0
         copy.y = 0
+        copy.usesTimedNext = false
         copy.startDelay = 0
         return copy
     }
 
     var timelineDuration: Double {
         phaseDuration
+    }
+
+    var timelinePreviewDuration: Double {
+        usesTimedNext ? phaseDuration : response
+    }
+
+    var nextLabel: String {
+        usesTimedNext ? "next +\(String(format: "%.2f", phaseDuration))s" : "next auto"
     }
 }
 
@@ -712,15 +1140,47 @@ private struct MotionEndpoint {
             scale: scale,
             opacity: opacity,
             phaseDuration: 0.34,
+            usesTimedNext: false,
             startDelay: 0,
+            motionBehavior: .spring,
             response: 0.5,
             damping: 0.72
         )
     }
 }
 
-private enum MotionKind: String, CaseIterable, Identifiable {
+private enum MotionBehavior: String, CaseIterable, Identifiable {
     case spring
+    case linear
+    case easeIn
+    case easeOut
+    case easeInOut
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .spring: "Spring"
+        case .linear: "Linear"
+        case .easeIn: "Ease In"
+        case .easeOut: "Ease Out"
+        case .easeInOut: "Ease InOut"
+        }
+    }
+
+    var easingName: String? {
+        switch self {
+        case .spring: nil
+        case .linear: "linear"
+        case .easeIn: "easeIn"
+        case .easeOut: "easeOut"
+        case .easeInOut: "easeInOut"
+        }
+    }
+}
+
+private enum MotionKind: String, CaseIterable, Identifiable {
+    case move
     case arc
     case jiggle
 
@@ -728,7 +1188,7 @@ private enum MotionKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .spring: "Spring"
+        case .move: "Move"
         case .arc: "Arc"
         case .jiggle: "Jiggle"
         }
@@ -748,6 +1208,51 @@ private enum ArcDirectionChoice: String, CaseIterable, Identifiable {
 }
 
 private enum MotionDocumentFactory {
+    struct DebugTransitionSummary {
+        let index: Int
+        let clip: MotionClip
+        let start: MotionEndpoint
+        let end: MotionEndpoint
+        let trigger: String
+        let delay: Double
+        let motion: String
+        let arcBend: Double?
+        let jiggleDuration: Double?
+
+        var message: String {
+            var parts = [
+                "phase=\(index + 1)",
+                "name=\(clip.name)",
+                "kind=\(clip.motionKind.title)",
+                "behavior=\(clip.motionBehavior.title)",
+                "start=(\(n(start.x)),\(n(start.y)))",
+                "move=(\(n(clip.x)),\(n(clip.y)))",
+                "end=(\(n(end.x)),\(n(end.y)))",
+                "rotation=\(n(clip.rotation))",
+                "scale=\(n(clip.scale))",
+                "opacity=\(n(clip.opacity))",
+                "trigger=\(trigger)",
+                "delay=\(n(delay))",
+                "nextMode=\(clip.usesTimedNext ? "atTime" : "auto")",
+                "nextAfter=\(n(clip.phaseDuration))",
+                "motion=\(motion)"
+            ]
+
+            if let arcBend {
+                parts.append("arcDirection=\(clip.arcDirection.rawValue)")
+                parts.append("arcBend=\(n(arcBend))")
+            }
+
+            if let jiggleDuration {
+                parts.append("jiggleDuration=\(n(jiggleDuration))")
+                parts.append("jiggleAmplitude=18")
+                parts.append("jiggleCycles=8")
+            }
+
+            return "[FrameZeroPlayground] " + parts.joined(separator: " ")
+        }
+    }
+
     static func document(for clips: [MotionClip], initial: MotionEndpoint = .origin) -> String {
         let states = stateJSON(for: clips, initial: initial)
         let transitions = transitionJSON(for: clips, initial: initial)
@@ -810,13 +1315,53 @@ private enum MotionDocumentFactory {
             }
           ],
           "triggers": [
-            { "id": "timeline", "type": "after" }
+            { "id": "timeline", "type": "after" },
+            { "id": "settled", "type": "automatic" }
           ],
           "dragBindings": [],
           "bodies": [],
           "forces": []
         }
         """
+    }
+
+    static func debugPhaseSummaries(for clips: [MotionClip], initial: MotionEndpoint = .origin) -> [String] {
+        transitionSummaries(for: clips, initial: initial).map(\.message)
+    }
+
+    static func debugTimelineSummaries(for clips: [MotionClip], initial: MotionEndpoint = .origin) -> [String] {
+        let summaries = transitionSummaries(for: clips, initial: initial)
+        guard !summaries.isEmpty else {
+            return ["[FrameZeroTimeline] empty"]
+        }
+
+        var knownAbsoluteStart = 0.0
+        var isAbsoluteStartKnown = true
+        var lines: [String] = ["[FrameZeroTimeline] phases=\(summaries.count)"]
+
+        for summary in summaries {
+            let startLabel: String
+            if summary.index == 0 {
+                knownAbsoluteStart = summary.delay
+                startLabel = "\(n(knownAbsoluteStart))s"
+            } else if summary.trigger == "timeline", isAbsoluteStartKnown {
+                knownAbsoluteStart += summary.delay
+                startLabel = "\(n(knownAbsoluteStart))s"
+            } else {
+                isAbsoluteStartKnown = false
+                startLabel = "after previous settles + \(n(summary.delay))s"
+            }
+
+            let durationLabel = summary.clip.motionBehavior == .spring
+                ? "response \(n(summary.clip.response))s"
+                : "duration \(n(summary.clip.response))s"
+
+            lines.append(
+                "[FrameZeroTimeline] phase=\(summary.index + 1) name=\(summary.clip.name) startsAt=\(startLabel) trigger=\(summary.trigger) transitionDelay=\(n(summary.delay)) behavior=\(summary.clip.motionBehavior.title) \(durationLabel) next=\(summary.clip.nextLabel)"
+            )
+        }
+
+        return lines
     }
 
     private static func stateJSON(for clips: [MotionClip], initial: MotionEndpoint) -> String {
@@ -851,16 +1396,12 @@ private enum MotionDocumentFactory {
     }
 
     private static func transitionJSON(for clips: [MotionClip], initial: MotionEndpoint) -> String {
-        clips.enumerated().map { index, clip in
-            let start = endpoint(after: Array(clips.prefix(index)), initial: initial)
-            let startX = start.x
-            let startY = start.y
-            let end = start.advanced(by: clip)
-            let distance = max(hypot(end.x - startX, end.y - startY), 1)
-            let bend = distance * clip.arcBend
-            let transitionDelay = index == 0
-                ? clip.startDelay
-                : clips[index - 1].timelineDuration + clip.startDelay
+        transitionSummaries(for: clips, initial: initial).map { summary in
+            let index = summary.index
+            let clip = summary.clip
+            let bend = summary.arcBend ?? 0
+            let motion = summary.motion
+            let motionDuration = summary.jiggleDuration ?? motionDuration(for: clip)
             let arcs = clip.motionKind == .arc ? """
         ,
                   "arcs": [
@@ -870,7 +1411,7 @@ private enum MotionDocumentFactory {
                       "y": "offset.y",
                       "direction": "\(clip.arcDirection.rawValue)",
                       "bend": \(n(bend)),
-                      "motion": { "type": "spring", "response": \(n(clip.response)), "dampingFraction": \(n(clip.damping)) }
+                      "motion": \(motion)
                     },
                     {
                       "select": { "id": "marker" },
@@ -878,7 +1419,7 @@ private enum MotionDocumentFactory {
                       "y": "offset.y",
                       "direction": "\(clip.arcDirection.rawValue)",
                       "bend": \(n(bend)),
-                      "motion": { "type": "spring", "response": \(n(clip.response)), "dampingFraction": \(n(clip.damping)) }
+                      "motion": \(motion)
                     }
                   ]
         """ : """
@@ -891,7 +1432,7 @@ private enum MotionDocumentFactory {
                     {
                       "select": { "id": "orb", "properties": ["rotation"] },
                       "amplitude": 18,
-                      "duration": \(n(clip.phaseDuration)),
+                      "duration": \(n(motionDuration)),
                       "cycles": 8,
                       "startDirection": "anticlockwise",
                       "decay": 0.18
@@ -899,7 +1440,7 @@ private enum MotionDocumentFactory {
                     {
                       "select": { "id": "marker", "properties": ["rotation"] },
                       "amplitude": 18,
-                      "duration": \(n(clip.phaseDuration)),
+                      "duration": \(n(motionDuration)),
                       "cycles": 8,
                       "startDirection": "anticlockwise",
                       "decay": 0.18
@@ -915,16 +1456,16 @@ private enum MotionDocumentFactory {
                   "id": "transition\(index)",
                   "from": "state\(index)",
                   "to": "state\(index + 1)",
-                  "trigger": "timeline",
-                  "delay": \(n(transitionDelay)),
+                  "trigger": "\(summary.trigger)",
+                  "delay": \(n(summary.delay)),
                   "rules": [
                     {
                       "select": { "role": "target", "properties": ["offset.x", "offset.y", "rotation", "scale", "opacity"] },
-                      "motion": { "type": "spring", "response": \(n(clip.response)), "dampingFraction": \(n(clip.damping)) }
+                      "motion": \(motion)
                     },
                     {
                       "select": { "role": "marker", "properties": ["offset.x", "offset.y", "rotation", "scale", "opacity"] },
-                      "motion": { "type": "spring", "response": \(n(clip.response)), "dampingFraction": \(n(clip.damping)) }
+                      "motion": \(motion)
                     }
                   ]\(arcs)\(jiggles),
                   "enter": [],
@@ -934,6 +1475,47 @@ private enum MotionDocumentFactory {
         """
         }
         .joined(separator: ",\n")
+    }
+
+    private static func transitionSummaries(for clips: [MotionClip], initial: MotionEndpoint) -> [DebugTransitionSummary] {
+        clips.enumerated().map { index, clip in
+            let start = endpoint(after: Array(clips.prefix(index)), initial: initial)
+            let end = start.advanced(by: clip)
+            let distance = max(hypot(end.x - start.x, end.y - start.y), 1)
+            let previousClip = index > 0 ? clips[index - 1] : nil
+            let isTimedTransition = previousClip?.usesTimedNext ?? true
+            let trigger = isTimedTransition ? "timeline" : "settled"
+            let delay = index == 0
+                ? clip.startDelay
+                : (isTimedTransition ? (previousClip?.timelineDuration ?? 0) : 0) + clip.startDelay
+            let arcBend = clip.motionKind == .arc ? distance * clip.arcBend : nil
+            let jiggleDuration = clip.motionKind == .jiggle ? motionDuration(for: clip) : nil
+
+            return DebugTransitionSummary(
+                index: index,
+                clip: clip,
+                start: start,
+                end: end,
+                trigger: trigger,
+                delay: delay,
+                motion: motionJSON(for: clip),
+                arcBend: arcBend,
+                jiggleDuration: jiggleDuration
+            )
+        }
+    }
+
+    private static func motionJSON(for clip: MotionClip) -> String {
+        if clip.motionBehavior == .spring {
+            return #"{ "type": "spring", "response": \#(n(clip.response)), "dampingFraction": \#(n(clip.damping)) }"#
+        }
+
+        let easing = clip.motionBehavior.easingName ?? "easeInOut"
+        return #"{ "type": "timed", "duration": \#(n(clip.response)), "easing": "\#(easing)" }"#
+    }
+
+    private static func motionDuration(for clip: MotionClip) -> Double {
+        clip.response
     }
 
     private static func n(_ value: Double) -> String {
@@ -953,6 +1535,7 @@ private struct PlaygroundChrome: View {
     let originY: Double
     let deltaX: Double
     let deltaY: Double
+    let targetOpacity: Double
     let motionKind: MotionKind
     let arcDirection: ArcDirectionChoice
     let arcBend: Double
@@ -1025,7 +1608,10 @@ private struct PlaygroundChrome: View {
         }
 
         context.fill(Path(ellipseIn: CGRect(x: origin.x - 4, y: origin.y - 4, width: 8, height: 8)), with: .color(.white.opacity(0.88)))
-        context.fill(Path(ellipseIn: CGRect(x: target.x - 6, y: target.y - 6, width: 12, height: 12)), with: .color(.cyan.opacity(0.95)))
+        let targetGuideOpacity = min(max(targetOpacity, 0), 1) * 0.55
+        if targetGuideOpacity > 0.01 {
+            context.stroke(Path(ellipseIn: CGRect(x: target.x - 7, y: target.y - 7, width: 14, height: 14)), with: .color(.cyan.opacity(targetGuideOpacity)), lineWidth: 1.5)
+        }
     }
 
     private func arcPath(from origin: CGPoint, to target: CGPoint) -> Path {

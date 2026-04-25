@@ -17,6 +17,10 @@ let package = Package(
     targets: [
         .target(
             name: "MotionEngineKit"
+        ),
+        .testTarget(
+            name: "MotionEngineKitTests",
+            dependencies: ["MotionEngineKit"]
         )
     ]
 )
