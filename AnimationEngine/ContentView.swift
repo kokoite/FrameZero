@@ -180,22 +180,22 @@ struct ContentView: View {
                     timelineMap
 
                     VStack(spacing: 9) {
-                        ControlSlider(title: "X", value: $clip.x, range: -150...150, suffix: "pt")
-                        ControlSlider(title: "Y", value: $clip.y, range: -210...210, suffix: "pt")
+                        ControlSlider(title: "X", value: $clip.x, range: -420...420, suffix: "pt")
+                        ControlSlider(title: "Y", value: $clip.y, range: -720...720, suffix: "pt")
                         if clip.motionKind == .arc {
-                            ControlSlider(title: "Bend", value: $clip.arcBend, range: 0.05...1.4, suffix: "x")
+                            ControlSlider(title: "Bend", value: $clip.arcBend, range: 0.0...3.0, suffix: "x")
                         }
-                        ControlSlider(title: "Rotate", value: $clip.rotation, range: -360...360, suffix: "deg")
-                        ControlSlider(title: "Scale", value: $clip.scale, range: 0.2...1.8, suffix: "x")
+                        ControlSlider(title: "Rotate", value: $clip.rotation, range: -1080...1080, suffix: "deg")
+                        ControlSlider(title: "Scale", value: $clip.scale, range: 0.0...4.0, suffix: "x")
                         ControlSlider(title: "Opacity", value: $clip.opacity, range: 0...1, suffix: "")
                         nextModeControl
                         if clip.usesTimedNext {
-                            ControlSlider(title: "Next Phase At", value: $clip.phaseDuration, range: 0.08...2.5, suffix: "s")
+                            ControlSlider(title: "Next Phase At", value: $clip.phaseDuration, range: 0.0...6.0, suffix: "s")
                         }
-                        ControlSlider(title: "Start Delay", value: $clip.startDelay, range: 0...2, suffix: "s")
-                        ControlSlider(title: motionTimingTitle, value: $clip.response, range: 0.15...1.2, suffix: "s")
+                        ControlSlider(title: "Start Delay", value: $clip.startDelay, range: 0...5, suffix: "s")
+                        ControlSlider(title: motionTimingTitle, value: $clip.response, range: 0.05...4.0, suffix: "s")
                         if clip.motionBehavior == .spring {
-                            ControlSlider(title: "Damping", value: $clip.damping, range: 0.35...1.25, suffix: "")
+                            ControlSlider(title: "Damping", value: $clip.damping, range: 0.0...3.0, suffix: "")
                         }
                     }
 
@@ -875,7 +875,7 @@ private struct ControlSlider: View {
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.numbersAndPunctuation)
-                        .frame(width: 58)
+                        .frame(width: 72)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 5)
                         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
