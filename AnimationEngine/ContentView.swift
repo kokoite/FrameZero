@@ -83,7 +83,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("MotionEngineKit")
+                Text("FrameZero")
                     .font(SampleTypography.title)
                     .foregroundStyle(.white)
 

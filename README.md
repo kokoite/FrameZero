@@ -1,14 +1,20 @@
-# MotionEngineKit
+# FrameZero
 
-MotionEngineKit is a SwiftUI motion engine for building JSON-driven, physics-feeling animations.
+Design complex SwiftUI animations in a playground. Ship them as JSON.
 
-The goal is simple: creating complex animation should be easier than you think. Open the sample playground, tweak motion with the control panel, save phases, play the full sequence, then use the generated JSON with the library in your own SwiftUI app.
+FrameZero is a SwiftUI motion engine and animation playground for making complex motion easier to create, tweak, and reuse.
 
-This project is still early, but the core direction is already in place: motion is data, SwiftUI is the renderer, and the engine owns the animation state.
+The idea is simple: animation should not be trapped inside hard-coded Swift. Open the playground, tweak motion with controls, build phases, play the full sequence, then use the generated JSON in your app.
 
-## What It Does
+<p align="center">
+  <img src="Documentation/Images/framezero-playground.jpg" alt="FrameZero playground showing a SwiftUI animation canvas and control panel" width="360">
+</p>
 
-MotionEngineKit lets you describe motion in JSON instead of hard-coding every animation in Swift.
+> Current Swift package module name: `MotionEngineKit`.
+
+## What It Can Do For You
+
+FrameZero lets you describe motion in JSON instead of hard-coding every animation in Swift.
 
 You can:
 
@@ -16,25 +22,41 @@ You can:
 - Animate existing SwiftUI views with `.motionDriven(...)`.
 - Build motion as named phases.
 - Chain phases into a single animation.
-- Tweak values from a visual control panel.
+- Tweak movement, arc, rotation, scale, opacity, response, damping, duration, and delay from a control panel.
 - Use screen and safe-area metrics in JSON.
 - Use spring, timed, arc, jiggle, drag, slingshot, and projectile-style motion.
 - Keep animation behavior outside app code so it can be changed later.
 
-The intended workflow is:
+## Why It Feels Different
+
+FrameZero treats motion as data.
+
+Instead of writing one-off animation code, you create reusable motion blocks. Each phase starts from the previous phase endpoint, so complex animation becomes a sequence of small, understandable moves.
+
+The control panel is the authoring loop:
 
 1. Create or tune animation in the sample app.
-2. Adjust movement, arc direction, scale, opacity, response, damping, phase duration, and delay.
-3. Save phases and play them as one animation.
-4. Copy or export the JSON.
-5. Load that JSON in MotionEngineKit.
-6. Attach the motion to JSON-rendered nodes or to your own SwiftUI views.
+2. Adjust values until it feels right.
+3. Save the motion as a phase.
+4. Chain phases into one animation.
+5. Use the JSON in the runtime.
+
+Creating complex animation is simpler than you think: tweak the behavior, get the JSON, and let the engine run it.
+
+## Quick Start
+
+1. Open `AnimationEngine.xcodeproj`.
+2. Run the `AnimationEngine` sample app.
+3. Use the playground control panel to create a phase.
+4. Tap `Add` to add it to the animation timeline.
+5. Tap `Play Animation` to preview the full sequence.
+6. Reuse the same JSON structure in your app with `MotionRuntimeView` or `.motionDriven(...)`.
 
 ## Why This Exists
 
 Most app animations become hard-coded quickly. Once that happens, changing motion requires editing Swift code, rebuilding the app, and shipping a new version.
 
-MotionEngineKit treats motion as configuration.
+FrameZero treats motion as configuration.
 
 That means a designer, developer, tool, or eventually a Mac editor can produce animation JSON, and the iOS runtime can execute it natively.
 
@@ -180,7 +202,7 @@ The current engine includes early support for:
 
 This is the beginning of the "game-feel" layer.
 
-## Using It In SwiftUI
+## Use It In SwiftUI
 
 ### Render A JSON Scene
 
@@ -230,6 +252,27 @@ Circle()
 The JSON owns the motion channels for `orb`; your SwiftUI owns the visual design.
 
 This is the direction for the SDK: animate anything SwiftUI can render, while keeping the motion editable as data.
+
+## Playground Workflow
+
+The included sample app is the current authoring surface.
+
+It gives you:
+
+- A playground canvas with an origin graph.
+- Controls for movement, rotation, scale, opacity, response, damping, duration, and delay.
+- Arc direction switching.
+- Saved phases.
+- Timeline phase chaining.
+- Per-phase play.
+- Full animation play.
+- Phase deletion.
+
+The important mental model:
+
+> Each phase starts where the previous phase ended.
+
+That makes complex animation feel manageable. You are not trying to author the entire sequence at once. You build a motion phrase one phase at a time.
 
 ## Minimal JSON Shape
 
@@ -324,27 +367,6 @@ This is the direction for the SDK: animate anything SwiftUI can render, while ke
 }
 ```
 
-## Playground
-
-The included sample app is the current authoring surface.
-
-It gives you:
-
-- A playground canvas with an origin graph.
-- Controls for movement, rotation, scale, opacity, response, damping, duration, and delay.
-- Arc direction switching.
-- Saved phases.
-- Timeline phase chaining.
-- Per-phase play.
-- Full animation play.
-- Phase deletion.
-
-The important mental model:
-
-> Each phase starts where the previous phase ended.
-
-That makes complex animation feel manageable. You are not trying to author the entire sequence at once. You build a motion phrase one phase at a time.
-
 ## Example Files
 
 See:
@@ -378,7 +400,7 @@ Not final yet:
 
 ## Direction
 
-The next major step is a macOS animation editor that creates JSON for MotionEngineKit.
+The next major step is a macOS animation editor that creates JSON for FrameZero.
 
 The editor should let users:
 
@@ -393,6 +415,6 @@ The runtime already points in that direction: motion is data, the playground pro
 
 ## License
 
-MotionEngineKit is released under the MIT License.
+FrameZero is released under the MIT License.
 
 You can use, modify, and distribute the project, but the copyright notice and license text must be included in copies or substantial portions of the software. In simple terms: use it freely, but keep the credit.
