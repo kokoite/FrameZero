@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000012F9D000000000001 /* MotionEngineKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000032F9D000000000003 /* MotionEngineKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		EA624BFB2F9C93060049BB39 /* AnimationEngine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnimationEngine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000012F9D000000000001 /* MotionEngineKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = AnimationEngine;
 			packageProductDependencies = (
+				A10000032F9D000000000003 /* MotionEngineKit */,
 			);
 			productName = AnimationEngine;
 			productReference = EA624BFB2F9C93060049BB39 /* AnimationEngine.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = EA624BF22F9C93060049BB39;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000022F9D000000000002 /* XCLocalSwiftPackageReference "MotionEngineKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EA624BFC2F9C93060049BB39 /* Products */;
 			projectDirPath = "";
@@ -332,6 +341,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A10000022F9D000000000002 /* XCLocalSwiftPackageReference "MotionEngineKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = MotionEngineKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000032F9D000000000003 /* MotionEngineKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000022F9D000000000002 /* XCLocalSwiftPackageReference "MotionEngineKit" */;
+			productName = MotionEngineKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EA624BF32F9C93060049BB39 /* Project object */;
 }

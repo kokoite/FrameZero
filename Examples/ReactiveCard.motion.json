@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "root": "screen",
+  "nodes": [
+    {
+      "id": "screen",
+      "kind": "vstack",
+      "roles": ["screen"],
+      "layout": {
+        "padding": 24
+      },
+      "style": {
+        "backgroundColor": "#0B1020"
+      },
+      "presentation": {},
+      "children": ["card"]
+    },
+    {
+      "id": "card",
+      "kind": "vstack",
+      "roles": ["card", "surface"],
+      "layout": {
+        "width": 340,
+        "height": 220
+      },
+      "style": {
+        "cornerRadius": 28,
+        "backgroundColor": "#2563EB"
+      },
+      "presentation": {
+        "offset.y": 260,
+        "scale": 0.94,
+        "opacity": 1
+      },
+      "children": ["title", "details"]
+    },
+    {
+      "id": "title",
+      "kind": "text",
+      "roles": ["title"],
+      "layout": {},
+      "style": {
+        "text": "Spring Card",
+        "font": "title",
+        "foregroundColor": "#FFFFFF"
+      },
+      "presentation": {
+        "opacity": 1
+      },
+      "children": []
+    },
+    {
+      "id": "details",
+      "kind": "text",
+      "roles": ["details"],
+      "layout": {},
+      "style": {
+        "text": "Drag or tap to expand",
+        "font": "body",
+        "foregroundColor": "#DBEAFE"
+      },
+      "presentation": {
+        "opacity": 0,
+        "offset.y": 18
+      },
+      "children": [],
+      "presence": {
+        "machine": "cardMachine",
+        "states": ["expanded"]
+      }
+    }
+  ],
+  "machines": [
+    {
+      "id": "cardMachine",
+      "initial": "collapsed",
+      "states": [
+        {
+          "id": "collapsed",
+          "values": [
+            {
+              "select": {
+                "id": "card",
+                "properties": ["offset.y"]
+              },
+              "value": 260
+            },
+            {
+              "select": {
+                "id": "card",
+                "properties": ["scale"]
+              },
+              "value": 0.94
+            }
+          ]
+        },
+        {
+          "id": "expanded",
+          "values": [
+            {
+              "select": {
+                "id": "card",
+                "properties": ["offset.y"]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "card",
+                "properties": ["scale"]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "details",
+                "properties": ["opacity"]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "details",
+                "properties": ["offset.y"]
+              },
+              "value": 0
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "id": "expand",
+          "from": "collapsed",
+          "to": "expanded",
+          "trigger": "tapCard",
+          "rules": [
+            {
+              "select": {
+                "role": "card",
+                "properties": ["offset.y", "scale"]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.42,
+                "dampingFraction": 0.82
+              }
+            },
+            {
+              "select": {
+                "id": "details",
+                "properties": ["opacity", "offset.y"]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.28,
+                "dampingFraction": 0.9
+              }
+            }
+          ],
+          "enter": [
+            {
+              "selector": {
+                "id": "details"
+              },
+              "from": {
+                "opacity": 0,
+                "offset.y": 18
+              }
+            }
+          ],
+          "exit": [],
+          "spawns": [
+            {
+              "id": "tapRipple",
+              "layer": "overlay",
+              "coordinateSpace": "triggerLocal",
+              "zIndex": 10,
+              "kind": "circle",
+              "anchor": "triggerLocation",
+              "lifetime": 0.45,
+              "layout": {
+                "width": 96,
+                "height": 96
+              },
+              "style": {
+                "backgroundColor": "#FFFFFF"
+              },
+              "from": {
+                "scale": 0.1,
+                "opacity": 0.35
+              },
+              "to": {
+                "scale": 2.4,
+                "opacity": 0
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.3,
+                "dampingFraction": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "collapse",
+          "from": "expanded",
+          "to": "collapsed",
+          "trigger": "tapCard",
+          "rules": [
+            {
+              "select": {
+                "role": "card",
+                "properties": ["offset.y", "scale"]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.36,
+                "dampingFraction": 0.88
+              }
+            },
+            {
+              "select": {
+                "id": "details",
+                "properties": ["opacity", "offset.y"]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.22,
+                "dampingFraction": 1
+              }
+            }
+          ],
+          "enter": [],
+          "exit": [
+            {
+              "selector": {
+                "id": "details"
+              },
+              "to": {
+                "opacity": 0,
+                "offset.y": 18
+              },
+              "despawnWhen": {
+                "property": "opacity",
+                "below": 0.01
+              }
+            }
+          ],
+          "spawns": []
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "tapCard",
+      "type": "tap",
+      "selector": {
+        "id": "card"
+      }
+    }
+  ],
+  "dragBindings": [
+    {
+      "id": "cardDrag",
+      "selector": {
+        "id": "card"
+      },
+      "axis": "y",
+      "updates": [
+        {
+          "source": "translation.y",
+          "mode": "relativeToGestureStart",
+          "target": {
+            "id": "card",
+            "property": "offset.y"
+          },
+          "scale": 1,
+          "clamp": [0, 260]
+        }
+      ],
+      "velocity": [
+        {
+          "source": "velocity.y",
+          "target": {
+            "id": "card",
+            "property": "offset.y"
+          },
+          "scale": 1
+        }
+      ],
+      "onEnd": {
+        "type": "settleByThreshold",
+        "property": {
+          "id": "card",
+          "property": "offset.y"
+        },
+        "threshold": 120,
+        "below": "expanded",
+        "above": "collapsed",
+        "motion": {
+          "type": "spring",
+          "response": 0.38,
+          "dampingFraction": 0.86
+        }
+      }
+    }
+  ]
+}

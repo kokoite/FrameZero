@@ -1,0 +1,914 @@
+{
+  "schemaVersion": 1,
+  "root": "screen",
+  "nodes": [
+    {
+      "id": "screen",
+      "kind": "zstack",
+      "roles": [
+        "screen"
+      ],
+      "layout": {
+        "padding": 0
+      },
+      "style": {
+        "backgroundColor": "#11131A"
+      },
+      "presentation": {},
+      "children": [
+        "sourceShape",
+        "destinationShape"
+      ]
+    },
+    {
+      "id": "sourceShape",
+      "kind": "zstack",
+      "roles": [
+        "handoff",
+        "source"
+      ],
+      "layout": {
+        "width": 60,
+        "height": 60
+      },
+      "style": {
+        "cornerRadius": 30,
+        "backgroundColor": "#38BDF8"
+      },
+      "presentation": {
+        "offset.x": {
+          "metric": "safeArea.centerX"
+        },
+        "offset.y": {
+          "metric": "safeArea.top",
+          "offset": 260
+        },
+        "rotation": 0,
+        "scale": 1,
+        "opacity": 1
+      },
+      "children": [
+        "sourceMarker"
+      ]
+    },
+    {
+      "id": "sourceMarker",
+      "kind": "roundedRectangle",
+      "roles": [
+        "marker"
+      ],
+      "layout": {
+        "width": 7,
+        "height": 24
+      },
+      "style": {
+        "cornerRadius": 3.5,
+        "backgroundColor": "#FFFFFF"
+      },
+      "presentation": {
+        "offset.y": -12,
+        "opacity": 0.95
+      },
+      "children": []
+    },
+    {
+      "id": "destinationShape",
+      "kind": "zstack",
+      "roles": [
+        "handoff",
+        "destination"
+      ],
+      "layout": {
+        "width": 60,
+        "height": 60
+      },
+      "style": {
+        "cornerRadius": 30,
+        "backgroundColor": "#38BDF8"
+      },
+      "presentation": {
+        "offset.x": {
+          "metric": "safeArea.centerX"
+        },
+        "offset.y": {
+          "metric": "safeArea.bottom",
+          "offset": -90
+        },
+        "rotation": 90,
+        "scale": 0.15,
+        "opacity": 0
+      },
+      "children": [
+        "destinationMarker"
+      ]
+    },
+    {
+      "id": "destinationMarker",
+      "kind": "roundedRectangle",
+      "roles": [
+        "marker"
+      ],
+      "layout": {
+        "width": 7,
+        "height": 24
+      },
+      "style": {
+        "cornerRadius": 3.5,
+        "backgroundColor": "#FFFFFF"
+      },
+      "presentation": {
+        "offset.y": -12,
+        "opacity": 0.95
+      },
+      "children": []
+    }
+  ],
+  "machines": [
+    {
+      "id": "circleMachine",
+      "initial": "collapsed",
+      "states": [
+        {
+          "id": "collapsed",
+          "values": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerX"
+              }
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.top",
+                "offset": 260
+              }
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerX"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.bottom",
+                "offset": -90
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 90
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale",
+                  "scale.x",
+                  "scale.y"
+                ]
+              },
+              "value": 0.15
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "values": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 90
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 0.08
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 360
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.x"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.y"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.bottom",
+                "offset": -90
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerX"
+              }
+            }
+          ]
+        },
+        {
+          "id": "leftEdge",
+          "values": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 90
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 0.08
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.left",
+                "offset": 40
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerY"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 540
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.x"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.y"
+                ]
+              },
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "windup",
+          "values": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 90
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 0.08
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.left",
+                "offset": 40
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerY"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 540
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 1.12
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.x"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.y"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "swooshedOut",
+          "values": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 90
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 0.08
+            },
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "value": {
+                "metric": "screen.left",
+                "offset": -80
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.y"
+                ]
+              },
+              "value": {
+                "metric": "safeArea.centerY"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "value": 540
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale"
+                ]
+              },
+              "value": 0.16
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.x"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale.y"
+                ]
+              },
+              "value": 1
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "value": 0
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "id": "completeClockwiseHandoff",
+          "from": "collapsed",
+          "to": "completed",
+          "trigger": "tapSource",
+          "rules": [
+            {
+              "select": {
+                "id": "sourceShape",
+                "properties": [
+                  "rotation",
+                  "scale",
+                  "opacity"
+                ]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.72,
+                "dampingFraction": 0.82
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation",
+                  "scale",
+                  "opacity"
+                ]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.92,
+                "dampingFraction": 0.78
+              }
+            }
+          ],
+          "enter": [],
+          "exit": [],
+          "spawns": []
+        },
+        {
+          "id": "arcToLeftEdge",
+          "from": "completed",
+          "to": "leftEdge",
+          "trigger": "handoffElapsed",
+          "delay": 0.85,
+          "rules": [
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "rotation"
+                ]
+              },
+              "motion": {
+                "type": "spring",
+                "response": 0.95,
+                "dampingFraction": 0.82
+              }
+            }
+          ],
+          "arcs": [
+            {
+              "select": {
+                "id": "destinationShape"
+              },
+              "x": "offset.x",
+              "y": "offset.y",
+              "direction": "clockwise",
+              "bend": 190,
+              "motion": {
+                "type": "spring",
+                "response": 1.05,
+                "dampingFraction": 0.86
+              }
+            }
+          ],
+          "enter": [],
+          "exit": [],
+          "spawns": []
+        },
+        {
+          "id": "jiggleAtLeftEdge",
+          "from": "leftEdge",
+          "to": "windup",
+          "trigger": "arcElapsed",
+          "delay": 0.32,
+          "rules": [
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale",
+                  "scale.x",
+                  "scale.y"
+                ]
+              },
+              "motion": {
+                "type": "timed",
+                "duration": 0.26,
+                "easing": "easeOut"
+              }
+            }
+          ],
+          "jiggles": [],
+          "enter": [],
+          "exit": [],
+          "spawns": []
+        },
+        {
+          "id": "whooshLaunch",
+          "from": "windup",
+          "to": "swooshedOut",
+          "trigger": "motionSettled",
+          "delay": 0.18,
+          "rules": [
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "offset.x"
+                ]
+              },
+              "motion": {
+                "type": "timed",
+                "duration": 0.9,
+                "easing": "easeIn"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "scale",
+                  "scale.x",
+                  "scale.y"
+                ]
+              },
+              "motion": {
+                "type": "timed",
+                "duration": 0.9,
+                "easing": "easeIn"
+              }
+            },
+            {
+              "select": {
+                "id": "destinationShape",
+                "properties": [
+                  "opacity"
+                ]
+              },
+              "motion": {
+                "type": "timed",
+                "duration": 0.9,
+                "easing": "easeIn"
+              }
+            }
+          ],
+          "jiggles": [],
+          "enter": [],
+          "exit": [],
+          "spawns": []
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "tapSource",
+      "type": "tap",
+      "selector": {
+        "role": "source"
+      }
+    },
+    {
+      "id": "handoffElapsed",
+      "type": "after"
+    },
+    {
+      "id": "arcElapsed",
+      "type": "after"
+    },
+    {
+      "id": "motionSettled",
+      "type": "automatic"
+    }
+  ],
+  "bodies": [
+    {
+      "id": "sourceOrbBody",
+      "selector": {
+        "role": "source"
+      },
+      "radius": 30,
+      "mass": 1,
+      "airResistance": 0.55,
+      "restitution": 0.78,
+      "friction": 0.86,
+      "stopSpeed": 58,
+      "collision": "screenBounds"
+    }
+  ],
+  "forces": [
+    {
+      "id": "worldGravity",
+      "type": "gravity",
+      "y": 980
+    }
+  ],
+  "dragBindings": [
+    {
+      "id": "sourceGulel",
+      "type": "slingshot",
+      "selector": {
+        "role": "source"
+      },
+      "anchor": {
+        "x": {
+          "metric": "safeArea.centerX"
+        },
+        "y": {
+          "metric": "safeArea.top",
+          "offset": 260
+        }
+      },
+      "maxPull": 185,
+      "minLaunchPull": 28,
+      "launchPower": 7.4,
+      "throwPower": 0,
+      "throwThreshold": 9999,
+      "chargeScale": 1.22,
+      "chargeFeedback": {
+        "stretchX": 0.16,
+        "stretchY": -0.08,
+        "launchPowerBase": 0.68,
+        "launchPowerRange": 0.62,
+        "launchPowerExponent": 0.5,
+        "throwInfluenceWhenFast": 0.22
+      },
+      "trail": {
+        "color": "#38BDF8",
+        "width": 7,
+        "maxWidth": 34,
+        "forkSpacing": 68,
+        "chargeCurve": 0.7,
+        "opacityBase": 0.2,
+        "opacityRange": 0.75,
+        "glowBaseSize": 74,
+        "glowGrowth": 56,
+        "glowFillOpacityBase": 0.09,
+        "glowFillOpacityRange": 0.14,
+        "glowStrokeOpacityBase": 0.22,
+        "glowStrokeOpacityRange": 0.34,
+        "glowStrokeWidthBase": 2,
+        "glowStrokeWidthRange": 7,
+        "glowInnerScale": 0.78
+      },
+      "trajectory": {
+        "color": "#BAE6FD",
+        "points": 13,
+        "step": 0.105,
+        "chargeCurve": 0.65,
+        "pointCountBaseFactor": 0.45,
+        "pointCountChargeFactor": 0.55,
+        "sizeBase": 5,
+        "sizeRange": 6,
+        "minFade": 0.35,
+        "opacityBase": 0.24,
+        "opacityRange": 0.7,
+        "opacityMinFade": 0.22
+      }
+    }
+  ]
+}
