@@ -179,25 +179,9 @@ struct ContentView: View {
                     phaseReadout
                     timelineMap
 
-                    VStack(spacing: 9) {
-                        ControlSlider(title: "X", value: $clip.x, range: -420...420, suffix: "pt")
-                        ControlSlider(title: "Y", value: $clip.y, range: -720...720, suffix: "pt")
-                        if clip.motionKind == .arc {
-                            ControlSlider(title: "Bend", value: $clip.arcBend, range: 0.0...3.0, suffix: "x")
-                        }
-                        ControlSlider(title: "Rotate", value: $clip.rotation, range: -1080...1080, suffix: "deg")
-                        ControlSlider(title: "Scale", value: $clip.scale, range: 0.0...4.0, suffix: "x")
-                        ControlSlider(title: "Opacity", value: $clip.opacity, range: 0...1, suffix: "")
-                        nextModeControl
-                        if clip.usesTimedNext {
-                            ControlSlider(title: "Next Phase At", value: $clip.phaseDuration, range: 0.0...6.0, suffix: "s")
-                        }
-                        ControlSlider(title: "Start Delay", value: $clip.startDelay, range: 0...5, suffix: "s")
-                        ControlSlider(title: motionTimingTitle, value: $clip.response, range: 0.05...4.0, suffix: "s")
-                        if clip.motionBehavior == .spring {
-                            ControlSlider(title: "Damping", value: $clip.damping, range: 0.0...3.0, suffix: "")
-                        }
-                    }
+                    motionControls
+                    timingControls
+                    effectControls
 
                     savedPhasesView
                     animationBuilder
@@ -382,6 +366,103 @@ struct ContentView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(.white.opacity(0.1), lineWidth: 1)
+        }
+    }
+
+    private var motionControls: some View {
+        ControlSection(title: "Motion", systemImage: "arrow.up.left.and.arrow.down.right") {
+            VStack(spacing: 9) {
+                ControlSlider(title: "X", value: $clip.x, range: -840...840, suffix: "pt")
+                ControlSlider(title: "Y", value: $clip.y, range: -1200...1200, suffix: "pt")
+                if clip.motionKind == .arc {
+                    ControlSlider(title: "Bend", value: $clip.arcBend, range: 0.0...6.0, suffix: "x")
+                }
+                ControlSlider(title: "Rotate", value: $clip.rotation, range: -2160...2160, suffix: "deg")
+                ControlSlider(title: "Scale", value: $clip.scale, range: 0.0...8.0, suffix: "x")
+                ControlSlider(title: "Opacity", value: $clip.opacity, range: 0...1, suffix: "")
+            }
+        }
+    }
+
+    private var timingControls: some View {
+        ControlSection(title: "Timing", systemImage: "timer") {
+            VStack(spacing: 9) {
+                nextModeControl
+                if clip.usesTimedNext {
+                    ControlSlider(title: "Next Phase At", value: $clip.phaseDuration, range: 0.0...12.0, suffix: "s")
+                }
+                ControlSlider(title: "Start Delay", value: $clip.startDelay, range: 0...8, suffix: "s")
+                ControlSlider(title: motionTimingTitle, value: $clip.response, range: 0.05...8.0, suffix: "s")
+                if clip.motionBehavior == .spring {
+                    ControlSlider(title: "Damping", value: $clip.damping, range: 0.0...3.0, suffix: "")
+                }
+            }
+        }
+    }
+
+    private var effectControls: some View {
+        ControlSection(title: "Actions", systemImage: "sparkles") {
+            VStack(spacing: 11) {
+                ToggleRow(title: "Particles", isOn: $clip.particlesEnabled)
+                if clip.particlesEnabled {
+                    particleControls
+                }
+
+                ToggleRow(title: "Screen Shake", isOn: $clip.screenShakeEnabled)
+                if clip.screenShakeEnabled {
+                    VStack(spacing: 9) {
+                        ControlSlider(title: "Shake Amp", value: $clip.shakeAmplitude, range: 0...36, suffix: "pt")
+                        ControlSlider(title: "Shake Time", value: $clip.shakeDuration, range: 0.05...2.0, suffix: "s")
+                        ControlSlider(title: "Shake Freq", value: $clip.shakeFrequency, range: 1...60, suffix: "hz")
+                    }
+                }
+
+                ToggleRow(title: "Haptic", isOn: $clip.hapticEnabled)
+                if clip.hapticEnabled {
+                    HStack(spacing: 4) {
+                        ForEach(HapticStyleChoice.allCases) { style in
+                            SegmentPill(title: style.title, isSelected: clip.hapticStyle == style, color: .cyan) {
+                                clip.hapticStyle = style
+                            }
+                        }
+                    }
+                    .padding(4)
+                    .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+    }
+
+    private var particleControls: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 4) {
+                ForEach(ParticleShapeChoice.allCases) { shape in
+                    SegmentPill(title: shape.title, isSelected: clip.particleShape == shape, color: .cyan) {
+                        clip.particleShape = shape
+                    }
+                }
+            }
+            .padding(4)
+            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: 4) {
+                ForEach(ParticleColorChoice.allCases) { color in
+                    SegmentPill(title: color.title, isSelected: clip.particleColor == color, color: color.color) {
+                        clip.particleColor = color
+                    }
+                }
+            }
+            .padding(4)
+            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+
+            ControlSlider(title: "Count", value: $clip.particleCount, range: 1...96, suffix: "")
+            ControlSlider(title: "Size", value: $clip.particleSize, range: 2...36, suffix: "pt")
+            ControlSlider(title: "Life", value: $clip.particleLifetime, range: 0.1...4.0, suffix: "s")
+            ControlSlider(title: "Angle Min", value: $clip.particleAngleMin, range: -360...720, suffix: "deg")
+            ControlSlider(title: "Angle Max", value: $clip.particleAngleMax, range: -360...720, suffix: "deg")
+            ControlSlider(title: "Near", value: $clip.particleDistanceMin, range: 0...360, suffix: "pt")
+            ControlSlider(title: "Far", value: $clip.particleDistanceMax, range: 0...720, suffix: "pt")
+            ControlSlider(title: "End Scale", value: $clip.particleEndScale, range: 0...3, suffix: "x")
         }
     }
 
@@ -902,6 +983,43 @@ private struct ControlSlider: View {
     }
 }
 
+private struct ControlSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: systemImage)
+                .font(SampleTypography.sectionTitle)
+                .foregroundStyle(.white.opacity(0.94))
+
+            content
+        }
+        .padding(10)
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        }
+    }
+}
+
+private struct ToggleRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(title, isOn: $isOn)
+            .font(SampleTypography.controlLabel)
+            .foregroundStyle(.white.opacity(0.9))
+            .tint(.cyan)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
 private struct SegmentPill: View {
     let title: String
     let isSelected: Bool
@@ -961,6 +1079,23 @@ private struct MotionClip: Identifiable, Equatable {
     var motionBehavior: MotionBehavior
     var response: Double
     var damping: Double
+    var particlesEnabled = false
+    var particleShape = ParticleShapeChoice.circle
+    var particleColor = ParticleColorChoice.cyan
+    var particleCount = 18.0
+    var particleSize = 8.0
+    var particleLifetime = 0.62
+    var particleAngleMin = 190.0
+    var particleAngleMax = 340.0
+    var particleDistanceMin = 24.0
+    var particleDistanceMax = 120.0
+    var particleEndScale = 0.12
+    var screenShakeEnabled = false
+    var shakeAmplitude = 5.0
+    var shakeDuration = 0.2
+    var shakeFrequency = 22.0
+    var hapticEnabled = false
+    var hapticStyle = HapticStyleChoice.medium
 
     static let demo = MotionClip(
         id: UUID(),
@@ -1000,29 +1135,127 @@ private struct MotionClip: Identifiable, Equatable {
         damping: 0.72
     )
 
-    static let scaleJigglePhase = MotionClip(
-        id: UUID(),
-        name: "Scale Jiggle",
-        motionKind: .jiggle,
-        arcDirection: .clockwise,
-        arcBend: 0.56,
-        x: 0,
-        y: 0,
-        rotation: 0,
-        scale: 1.2,
-        opacity: 1,
-        phaseDuration: 1,
-        usesTimedNext: false,
-        startDelay: 0,
-        motionBehavior: .spring,
-        response: 1,
-        damping: 0.64
-    )
+    static let scaleJigglePhase: MotionClip = {
+        var clip = MotionClip(
+            id: UUID(),
+            name: "Scale Jiggle Burst",
+            motionKind: .jiggle,
+            arcDirection: .clockwise,
+            arcBend: 0.56,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scale: 1.2,
+            opacity: 1,
+            phaseDuration: 1,
+            usesTimedNext: false,
+            startDelay: 0,
+            motionBehavior: .spring,
+            response: 1,
+            damping: 0.64
+        )
+        clip.particlesEnabled = true
+        clip.particleCount = 28
+        clip.particleLifetime = 0.78
+        clip.particleAngleMin = 0
+        clip.particleAngleMax = 360
+        clip.particleDistanceMin = 30
+        clip.particleDistanceMax = 150
+        clip.screenShakeEnabled = true
+        clip.shakeAmplitude = 4
+        clip.shakeDuration = 0.18
+        clip.hapticEnabled = true
+        clip.hapticStyle = .success
+        return clip
+    }()
+
+    static let particleBurstPhase: MotionClip = {
+        var clip = MotionClip(
+            id: UUID(),
+            name: "Particle Burst",
+            motionKind: .move,
+            arcDirection: .clockwise,
+            arcBend: 0.56,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scale: 1,
+            opacity: 1,
+            phaseDuration: 0.55,
+            usesTimedNext: false,
+            startDelay: 0,
+            motionBehavior: .easeOut,
+            response: 0.55,
+            damping: 0.7
+        )
+        clip.particlesEnabled = true
+        clip.particleCount = 42
+        clip.particleSize = 7
+        clip.particleLifetime = 0.75
+        clip.particleAngleMin = 0
+        clip.particleAngleMax = 360
+        clip.particleDistanceMin = 24
+        clip.particleDistanceMax = 165
+        return clip
+    }()
+
+    static let screenShakePhase: MotionClip = {
+        var clip = MotionClip(
+            id: UUID(),
+            name: "Screen Shake",
+            motionKind: .move,
+            arcDirection: .clockwise,
+            arcBend: 0.56,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scale: 1.04,
+            opacity: 1,
+            phaseDuration: 0.35,
+            usesTimedNext: false,
+            startDelay: 0,
+            motionBehavior: .easeOut,
+            response: 0.35,
+            damping: 0.7
+        )
+        clip.screenShakeEnabled = true
+        clip.shakeAmplitude = 9
+        clip.shakeDuration = 0.35
+        clip.shakeFrequency = 26
+        return clip
+    }()
+
+    static let hapticPulsePhase: MotionClip = {
+        var clip = MotionClip(
+            id: UUID(),
+            name: "Haptic Pulse",
+            motionKind: .move,
+            arcDirection: .clockwise,
+            arcBend: 0.56,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scale: 1.14,
+            opacity: 1,
+            phaseDuration: 0.28,
+            usesTimedNext: false,
+            startDelay: 0,
+            motionBehavior: .easeOut,
+            response: 0.28,
+            damping: 0.7
+        )
+        clip.hapticEnabled = true
+        clip.hapticStyle = .medium
+        return clip
+    }()
 
     static let samples = [
         demo,
         wideArcPhase,
         scaleJigglePhase,
+        particleBurstPhase,
+        screenShakePhase,
+        hapticPulsePhase,
         MotionClip(
             id: UUID(),
             name: "Tiny Panic",
@@ -1093,6 +1326,89 @@ private struct MotionClip: Identifiable, Equatable {
 
     var nextLabel: String {
         usesTimedNext ? "next +\(String(format: "%.2f", phaseDuration))s" : "next auto"
+    }
+}
+
+private enum ParticleShapeChoice: String, CaseIterable, Identifiable {
+    case circle
+    case square
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .circle: "Circle"
+        case .square: "Square"
+        }
+    }
+
+    var nodeKind: String {
+        switch self {
+        case .circle: "circle"
+        case .square: "roundedRectangle"
+        }
+    }
+}
+
+private enum ParticleColorChoice: String, CaseIterable, Identifiable {
+    case cyan
+    case blue
+    case white
+    case pink
+    case lime
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cyan: "Cyan"
+        case .blue: "Blue"
+        case .white: "White"
+        case .pink: "Pink"
+        case .lime: "Lime"
+        }
+    }
+
+    var hex: String {
+        switch self {
+        case .cyan: "#38BDF8"
+        case .blue: "#60A5FA"
+        case .white: "#FFFFFF"
+        case .pink: "#F472B6"
+        case .lime: "#A3E635"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .cyan: .cyan
+        case .blue: .blue
+        case .white: .white
+        case .pink: .pink
+        case .lime: .green
+        }
+    }
+}
+
+private enum HapticStyleChoice: String, CaseIterable, Identifiable {
+    case light
+    case medium
+    case heavy
+    case success
+    case warning
+    case error
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .light: "Light"
+        case .medium: "Medium"
+        case .heavy: "Heavy"
+        case .success: "Success"
+        case .warning: "Warning"
+        case .error: "Error"
+        }
     }
 }
 
@@ -1247,6 +1563,18 @@ private enum MotionDocumentFactory {
                 parts.append("jiggleDuration=\(n(jiggleDuration))")
                 parts.append("jiggleAmplitude=18")
                 parts.append("jiggleCycles=8")
+            }
+
+            if clip.particlesEnabled {
+                parts.append("particles=count \(Int(clip.particleCount.rounded())) size \(n(clip.particleSize)) color \(clip.particleColor.rawValue)")
+            }
+
+            if clip.screenShakeEnabled {
+                parts.append("screenShake=amp \(n(clip.shakeAmplitude)) duration \(n(clip.shakeDuration))")
+            }
+
+            if clip.hapticEnabled {
+                parts.append("haptic=\(clip.hapticStyle.rawValue)")
             }
 
             return "[FrameZeroPlayground] " + parts.joined(separator: " ")
@@ -1451,6 +1779,8 @@ private enum MotionDocumentFactory {
                   "jiggles": []
         """
 
+            let actions = actionJSON(for: clip, index: index)
+
             return """
                 {
                   "id": "transition\(index)",
@@ -1470,7 +1800,8 @@ private enum MotionDocumentFactory {
                   ]\(arcs)\(jiggles),
                   "enter": [],
                   "exit": [],
-                  "spawns": []
+                  "spawns": [],
+                  "actions": \(actions)
                 }
         """
         }
@@ -1516,6 +1847,77 @@ private enum MotionDocumentFactory {
 
     private static func motionDuration(for clip: MotionClip) -> Double {
         clip.response
+    }
+
+    private static func actionJSON(for clip: MotionClip, index: Int) -> String {
+        var actions: [String] = []
+
+        if clip.hapticEnabled {
+            actions.append(#"{ "type": "haptic", "style": "\#(clip.hapticStyle.rawValue)", "intensity": 0.82 }"#)
+        }
+
+        if clip.screenShakeEnabled {
+            actions.append("""
+            {
+              "type": "screenShake",
+              "amplitude": \(n(clip.shakeAmplitude)),
+              "duration": \(n(clip.shakeDuration)),
+              "frequency": \(n(clip.shakeFrequency)),
+              "decay": 1.35
+            }
+            """)
+        }
+
+        if clip.particlesEnabled {
+            let count = max(Int(clip.particleCount.rounded()), 1)
+            let size = max(clip.particleSize, 0.1)
+            let lifetime = max(clip.particleLifetime, 0.1)
+            let near = min(clip.particleDistanceMin, clip.particleDistanceMax)
+            let far = max(clip.particleDistanceMin, clip.particleDistanceMax)
+            let angleMin = min(clip.particleAngleMin, clip.particleAngleMax)
+            let angleMax = max(clip.particleAngleMin, clip.particleAngleMax)
+
+            actions.append("""
+            {
+              "type": "emitParticles",
+              "id": "phase\(index)Particles",
+              "selector": { "id": "orb" },
+              "count": \(count),
+              "angle": { "min": \(n(angleMin)), "max": \(n(angleMax)) },
+              "distance": { "min": \(n(near)), "max": \(n(far)) },
+              "duration": \(n(lifetime)),
+              "particle": {
+                "kind": "\(clip.particleShape.nodeKind)",
+                "layout": {
+                  "width": \(n(size)),
+                  "height": \(n(size))
+                },
+                "style": {
+                  "cornerRadius": \(n(size * 0.22)),
+                  "backgroundColor": "\(clip.particleColor.hex)"
+                },
+                "from": {
+                  "scale": 1,
+                  "opacity": 0.96
+                },
+                "to": {
+                  "scale": \(n(clip.particleEndScale)),
+                  "opacity": 0
+                },
+                "motion": { "type": "timed", "duration": \(n(lifetime)), "easing": "easeOut" },
+                "lifetime": \(n(lifetime))
+              }
+            }
+            """)
+        }
+
+        guard !actions.isEmpty else { return "[]" }
+
+        return """
+        [
+        \(actions.joined(separator: ",\n"))
+        ]
+        """
     }
 
     private static func n(_ value: Double) -> String {

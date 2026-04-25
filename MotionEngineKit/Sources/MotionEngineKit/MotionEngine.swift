@@ -92,6 +92,31 @@ struct MotionTrajectoryPointRuntime: Identifiable {
     let opacity: Double
 }
 
+private struct ScheduledMotionAction {
+    let machineID: MachineID
+    let action: MotionAction
+    var remainingDelay: Double
+}
+
+struct MotionScreenShakeRuntime: Identifiable {
+    let id: String
+    let amplitude: Double
+    let duration: Double
+    let frequency: Double
+    let decay: Double
+    var elapsed: Double
+}
+
+struct MotionParticleRuntime: Identifiable {
+    let id: String
+    let kind: MotionNodeKind
+    let layout: [String: MotionValue]
+    let style: [String: MotionValue]
+    var channels: [String: MotionChannel]
+    let lifetime: Double
+    var elapsed: Double
+}
+
 private struct ActiveSlingshotDrag {
     let nodeID: NodeID
     let binding: MotionDragBinding
@@ -209,6 +234,9 @@ private struct EngineSnapshot {
     let pendingTargets: [PendingChannelTarget]
     let activeArcs: [MotionArcRuntime]
     let activeJiggles: [MotionJiggleRuntime]
+    let scheduledActions: [ScheduledMotionAction]
+    let activeScreenShakes: [MotionScreenShakeRuntime]
+    let activeParticles: [MotionParticleRuntime]
     let activeSlingshotDrags: [NodeID: ActiveSlingshotDrag]
     let activeProjectiles: [NodeID: ActiveProjectile]
     let activeGlobalDragNodeID: NodeID?
@@ -247,6 +275,9 @@ public final class MotionEngine {
     private var pendingTargets: [PendingChannelTarget] = []
     private var activeArcs: [MotionArcRuntime] = []
     private var activeJiggles: [MotionJiggleRuntime] = []
+    private var scheduledActions: [ScheduledMotionAction] = []
+    private var activeScreenShakes: [MotionScreenShakeRuntime] = []
+    private var activeParticles: [MotionParticleRuntime] = []
     private var activeSlingshotDrags: [NodeID: ActiveSlingshotDrag] = [:]
     private var activeProjectiles: [NodeID: ActiveProjectile] = [:]
     private var activeGlobalDragNodeID: NodeID?
@@ -254,8 +285,13 @@ public final class MotionEngine {
     private var viewport: MotionViewport?
     private var editableDocumentURL: URL?
     private var lastLoadedModificationDate: Date?
+    private var hapticPerformer: MotionHapticPerformer = DefaultMotionHapticPerformer()
 
     public init() {}
+
+    func setHapticPerformerForTesting(_ performer: MotionHapticPerformer) {
+        hapticPerformer = performer
+    }
 
     public static func phase1Demo() -> MotionEngine {
         let engine = MotionEngine()
@@ -608,6 +644,20 @@ public final class MotionEngine {
         }
     }
 
+    func screenShakeOffset() -> (x: Double, y: Double) {
+        activeScreenShakes.reduce(into: (x: 0.0, y: 0.0)) { result, shake in
+            let progress = min(max(shake.elapsed / shake.duration, 0), 1)
+            let envelope = pow(1 - progress, shake.decay)
+            let phase = shake.elapsed * shake.frequency * 2 * Double.pi
+            result.x += sin(phase) * shake.amplitude * envelope
+            result.y += cos(phase * 1.37) * shake.amplitude * envelope
+        }
+    }
+
+    func particles() -> [MotionParticleRuntime] {
+        activeParticles
+    }
+
     private func tapTriggers(for nodeID: NodeID) -> [MotionTrigger] {
         var currentID: NodeID? = nodeID
 
@@ -910,6 +960,9 @@ public final class MotionEngine {
             pendingTargets: pendingTargets,
             activeArcs: activeArcs,
             activeJiggles: activeJiggles,
+            scheduledActions: scheduledActions,
+            activeScreenShakes: activeScreenShakes,
+            activeParticles: activeParticles,
             activeSlingshotDrags: activeSlingshotDrags,
             activeProjectiles: activeProjectiles,
             activeGlobalDragNodeID: activeGlobalDragNodeID,
@@ -942,6 +995,9 @@ public final class MotionEngine {
         pendingTargets = snapshot.pendingTargets
         activeArcs = snapshot.activeArcs
         activeJiggles = snapshot.activeJiggles
+        scheduledActions = snapshot.scheduledActions
+        activeScreenShakes = snapshot.activeScreenShakes
+        activeParticles = snapshot.activeParticles
         activeSlingshotDrags = snapshot.activeSlingshotDrags
         activeProjectiles = snapshot.activeProjectiles
         activeGlobalDragNodeID = snapshot.activeGlobalDragNodeID
@@ -1037,6 +1093,9 @@ public final class MotionEngine {
         pendingTargets = []
         activeArcs = []
         activeJiggles = []
+        scheduledActions = []
+        activeScreenShakes = []
+        activeParticles = []
         activeSlingshotDrags = [:]
         activeProjectiles = [:]
         activeGlobalDragNodeID = nil
@@ -1117,6 +1176,126 @@ public final class MotionEngine {
                 _ = try resolve(jiggle.select)
                 try validateJiggle(jiggle, context: "transition '\(transition.id)'")
             }
+
+            for action in transition.actions {
+                try validateAction(action, context: "transition '\(transition.id)'")
+            }
+        }
+    }
+
+    private func validateAction(_ action: MotionAction, context: String) throws {
+        switch action {
+        case let .sequence(group), let .parallel(group):
+            for child in group.actions {
+                try validateAction(child, context: context)
+            }
+        case let .delay(delay):
+            guard delay.duration.isFinite, delay.duration >= 0 else {
+                throw MotionRuntimeError.validation("Action delay duration must be finite and non-negative in \(context)")
+            }
+        case let .haptic(haptic):
+            if let intensity = haptic.intensity, (!intensity.isFinite || intensity < 0 || intensity > 1) {
+                throw MotionRuntimeError.validation("Haptic intensity must be between 0 and 1 in \(context)")
+            }
+        case let .screenShake(shake):
+            guard shake.duration.isFinite, shake.duration > 0 else {
+                throw MotionRuntimeError.validation("Screen shake duration must be positive and finite in \(context)")
+            }
+            guard shake.amplitude.isFinite, shake.amplitude >= 0 else {
+                throw MotionRuntimeError.validation("Screen shake amplitude must be finite and non-negative in \(context)")
+            }
+            if let frequency = shake.frequency, (!frequency.isFinite || frequency < 0) {
+                throw MotionRuntimeError.validation("Screen shake frequency must be finite and non-negative in \(context)")
+            }
+            if let decay = shake.decay, (!decay.isFinite || decay < 0) {
+                throw MotionRuntimeError.validation("Screen shake decay must be finite and non-negative in \(context)")
+            }
+        case let .emitParticles(emission):
+            if let selector = emission.selector {
+                try validateNodeSelector(selector, context: "particle action '\(emission.id)' in \(context)")
+                let matchCount = try resolveNodeIDs(selector).count
+                guard matchCount <= MotionActionLimits.maxParticleSelectorMatches else {
+                    throw MotionRuntimeError.validation("Particle action '\(emission.id)' selector matches \(matchCount) nodes; max is \(MotionActionLimits.maxParticleSelectorMatches) in \(context)")
+                }
+            }
+            guard emission.count > 0 else {
+                throw MotionRuntimeError.validation("Particle action '\(emission.id)' count must be greater than zero in \(context)")
+            }
+            guard emission.count <= MotionActionLimits.maxParticlesPerEmission else {
+                throw MotionRuntimeError.validation("Particle action '\(emission.id)' count must be <= \(MotionActionLimits.maxParticlesPerEmission) in \(context)")
+            }
+            if let duration = emission.duration, (!duration.isFinite || duration < 0) {
+                throw MotionRuntimeError.validation("Particle action '\(emission.id)' duration must be finite and non-negative in \(context)")
+            }
+            try validateParticleSpec(emission.particle, context: "particle action '\(emission.id)' in \(context)")
+        }
+    }
+
+    private func validateParticleSpec(_ particle: MotionParticleSpec, context: String) throws {
+        try validateFiniteNumbers(in: particle.layout, context: "particle layout for \(context)")
+        try validateFiniteNumbers(in: particle.style, context: "particle style for \(context)")
+        try validateFiniteNumbers(in: particle.from, context: "particle from values for \(context)")
+        try validateFiniteNumbers(in: particle.to, context: "particle to values for \(context)")
+
+        for key in ["backgroundColor"] where particle.style[key] != nil {
+            guard let value = particle.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
+                throw MotionRuntimeError.validation("Particle style '\(key)' for \(context) must be a 6-digit hex color")
+            }
+        }
+
+        try validateParticleKeys(particle, context: context)
+
+        guard particle.lifetime.isFinite, particle.lifetime > 0 else {
+            throw MotionRuntimeError.validation("Particle lifetime must be positive and finite in \(context)")
+        }
+        try validateMotion(particle.motion, context: context)
+    }
+
+    private func validateParticleKeys(_ particle: MotionParticleSpec, context: String) throws {
+        try requireKeys(
+            particle.layout,
+            areIn: ["width", "height"],
+            label: "particle layout",
+            context: context
+        )
+        try requireKeys(
+            particle.style,
+            areIn: ["backgroundColor", "cornerRadius"],
+            label: "particle style",
+            context: context
+        )
+        try requireKeys(
+            particle.from,
+            areIn: ["offset.x", "offset.y", "scale", "scale.x", "scale.y", "rotation", "opacity"],
+            label: "particle from",
+            context: context
+        )
+        try requireKeys(
+            particle.to,
+            areIn: ["offset.x", "offset.y", "scale", "scale.x", "scale.y", "rotation", "opacity"],
+            label: "particle to",
+            context: context
+        )
+
+        for key in particle.layout.keys {
+            guard particle.layout[key]?.number != nil else {
+                throw MotionRuntimeError.validation("Particle layout '\(key)' for \(context) must be a number")
+            }
+        }
+
+        if let cornerRadius = particle.style["cornerRadius"], cornerRadius.number == nil {
+            throw MotionRuntimeError.validation("Particle style 'cornerRadius' for \(context) must be a number")
+        }
+    }
+
+    private func requireKeys(
+        _ values: [String: MotionValue],
+        areIn supportedKeys: Set<String>,
+        label: String,
+        context: String
+    ) throws {
+        for key in values.keys where !supportedKeys.contains(key) {
+            throw MotionRuntimeError.validation("Unsupported \(label) key '\(key)' for \(context)")
         }
     }
 
@@ -1615,6 +1794,7 @@ public final class MotionEngine {
         pendingTargets = []
         activeArcs = []
         activeJiggles = []
+        scheduledActions.removeAll { $0.machineID == machineID }
 
         for assignment in state.values {
             let keys = try resolve(assignment.select)
@@ -1660,6 +1840,8 @@ public final class MotionEngine {
         if !snap, let transition {
             try configureArcMotions(for: transition)
             try configureJiggleMotions(for: transition)
+            scheduleActions(transition.actions, machineID: machineID)
+            runReadyActions()
         }
     }
 
@@ -1787,6 +1969,177 @@ public final class MotionEngine {
                     elapsed: 0
                 ))
             }
+        }
+    }
+
+    private func scheduleActions(_ actions: [MotionAction], machineID: MachineID) {
+        for action in actions {
+            scheduleAction(action, machineID: machineID, after: 0)
+        }
+    }
+
+    private func scheduleAction(_ action: MotionAction, machineID: MachineID, after delay: Double) {
+        switch action {
+        case let .sequence(group):
+            var cursor = delay
+            for child in group.actions {
+                scheduleAction(child, machineID: machineID, after: cursor)
+                cursor += actionDuration(child)
+            }
+        case let .parallel(group):
+            for child in group.actions {
+                scheduleAction(child, machineID: machineID, after: delay)
+            }
+        case let .delay(delayAction):
+            guard delayAction.duration > 0 else { return }
+            scheduledActions.append(ScheduledMotionAction(machineID: machineID, action: action, remainingDelay: delay + delayAction.duration))
+        case .haptic, .screenShake, .emitParticles:
+            scheduledActions.append(ScheduledMotionAction(machineID: machineID, action: action, remainingDelay: delay))
+        }
+    }
+
+    private func actionDuration(_ action: MotionAction) -> Double {
+        switch action {
+        case let .sequence(group):
+            return group.actions.reduce(0) { $0 + actionDuration($1) }
+        case let .parallel(group):
+            return group.actions.map(actionDuration).max() ?? 0
+        case let .delay(delay):
+            return delay.duration
+        case .haptic:
+            return 0
+        case let .screenShake(shake):
+            return shake.duration
+        case let .emitParticles(emission):
+            return emission.duration ?? emission.particle.lifetime
+        }
+    }
+
+    private func runReadyActions() {
+        for index in scheduledActions.indices.reversed() where scheduledActions[index].remainingDelay <= 0 {
+            let action = scheduledActions[index].action
+            scheduledActions.remove(at: index)
+            runAction(action)
+        }
+    }
+
+    private func runAction(_ action: MotionAction) {
+        switch action {
+        case .sequence, .parallel, .delay:
+            return
+        case let .haptic(haptic):
+            hapticPerformer.perform(haptic)
+        case let .screenShake(shake):
+            activeScreenShakes.append(MotionScreenShakeRuntime(
+                id: UUID().uuidString,
+                amplitude: shake.amplitude,
+                duration: shake.duration,
+                frequency: shake.frequency ?? 24,
+                decay: shake.decay ?? 1,
+                elapsed: 0
+            ))
+        case let .emitParticles(emission):
+            spawnParticles(from: emission)
+        }
+    }
+
+    private func spawnParticles(from emission: MotionEmitParticlesAction) {
+        let originNodeIDs: [NodeID]
+        if let selector = emission.selector, let resolved = try? resolveNodeIDs(selector) {
+            originNodeIDs = resolved
+        } else {
+            originNodeIDs = []
+        }
+
+        let origins = originNodeIDs.isEmpty
+            ? [(x: 0.0, y: 0.0)]
+            : originNodeIDs.map { nodeID in
+                (
+                    x: number(for: nodeID, property: "offset.x", default: 0),
+                    y: number(for: nodeID, property: "offset.y", default: 0)
+                )
+            }
+
+        for origin in origins {
+            for index in 0..<emission.count {
+                guard activeParticles.count < MotionActionLimits.maxActiveParticles else { return }
+
+                let progress = emission.count == 1 ? 0.5 : Double(index) / Double(emission.count - 1)
+                let angleRange = emission.angle ?? MotionDoubleRange(min: 0, max: 360)
+                let distanceRange = emission.distance ?? MotionDoubleRange(min: 36, max: 96)
+                let angle = (angleRange.min + ((angleRange.max - angleRange.min) * progress)) * Double.pi / 180
+                let alternating = index.isMultiple(of: 2) ? 1.0 : -1.0
+                let distanceProgress = emission.count == 1 ? 1 : Double((index * 37) % max(emission.count, 1)) / Double(max(emission.count - 1, 1))
+                let distance = distanceRange.min + ((distanceRange.max - distanceRange.min) * distanceProgress)
+                let defaultTargetX = cos(angle) * distance
+                let defaultTargetY = sin(angle) * distance * alternating
+                let particle = makeParticle(
+                    emission: emission,
+                    idSuffix: "\(index)-\(UUID().uuidString)",
+                    originX: origin.x,
+                    originY: origin.y,
+                    defaultTargetX: defaultTargetX,
+                    defaultTargetY: defaultTargetY
+                )
+                activeParticles.append(particle)
+            }
+        }
+    }
+
+    private func makeParticle(
+        emission: MotionEmitParticlesAction,
+        idSuffix: String,
+        originX: Double,
+        originY: Double,
+        defaultTargetX: Double,
+        defaultTargetY: Double
+    ) -> MotionParticleRuntime {
+        var channels: [String: MotionChannel] = [:]
+        let particle = emission.particle
+        var properties = Set(particle.from.keys)
+        properties.formUnion(particle.to.keys)
+        properties.formUnion(["offset.x", "offset.y", "scale", "opacity"])
+
+        for property in properties {
+            let explicitFrom = particle.from[property].flatMap(resolveNumber)
+            let explicitTo = particle.to[property].flatMap(resolveNumber)
+            let fromValue = explicitFrom ?? defaultParticleValue(for: property, target: false)
+            let toValue = explicitTo ?? defaultParticleValue(for: property, target: true)
+            let adjustedFrom = fromValue + ((property == "offset.x") ? originX : (property == "offset.y" ? originY : 0))
+            let targetDefault = property == "offset.x" ? defaultTargetX : (property == "offset.y" ? defaultTargetY : 0)
+            let adjustedTo = toValue
+                + ((property == "offset.x") ? originX : (property == "offset.y" ? originY : 0))
+                + ((explicitTo == nil && (property == "offset.x" || property == "offset.y")) ? targetDefault : 0)
+
+            channels[property] = MotionChannel(
+                current: adjustedFrom,
+                velocity: 0,
+                target: adjustedTo,
+                motion: particle.motion,
+                animationStart: adjustedFrom,
+                animationElapsed: 0
+            )
+        }
+
+        return MotionParticleRuntime(
+            id: "\(emission.id)-\(idSuffix)",
+            kind: particle.kind,
+            layout: particle.layout,
+            style: particle.style,
+            channels: channels,
+            lifetime: particle.lifetime,
+            elapsed: 0
+        )
+    }
+
+    private func defaultParticleValue(for property: String, target: Bool) -> Double {
+        switch property {
+        case "scale":
+            return target ? 0.2 : 1
+        case "opacity":
+            return target ? 0 : 1
+        default:
+            return 0
         }
     }
 
@@ -2001,6 +2354,40 @@ public final class MotionEngine {
 
             if projectile.isResting {
                 activeProjectiles[nodeID] = nil
+            } else {
+                hasActiveChannels = true
+            }
+        }
+
+        for index in scheduledActions.indices.reversed() {
+            scheduledActions[index].remainingDelay -= dt
+            if scheduledActions[index].remainingDelay <= 0 {
+                let action = scheduledActions[index].action
+                scheduledActions.remove(at: index)
+                runAction(action)
+            } else {
+                hasActiveChannels = true
+            }
+        }
+
+        for index in activeScreenShakes.indices.reversed() {
+            activeScreenShakes[index].elapsed += dt
+            if activeScreenShakes[index].elapsed >= activeScreenShakes[index].duration {
+                activeScreenShakes.remove(at: index)
+            } else {
+                hasActiveChannels = true
+            }
+        }
+
+        for index in activeParticles.indices.reversed() {
+            activeParticles[index].elapsed += dt
+            let channelKeys = Array(activeParticles[index].channels.keys)
+            for key in channelKeys {
+                activeParticles[index].channels[key]?.integrate(dt: dt)
+            }
+
+            if activeParticles[index].elapsed >= activeParticles[index].lifetime {
+                activeParticles.remove(at: index)
             } else {
                 hasActiveChannels = true
             }

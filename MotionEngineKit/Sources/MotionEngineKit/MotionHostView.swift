@@ -16,6 +16,7 @@ public struct MotionEffectsOverlay: View {
             ZStack {
                 renderSlingshotGlow(in: proxy.size)
                 renderTrajectoryPoints(in: proxy.size)
+                renderParticles(in: proxy.size)
             }
             .allowsHitTesting(false)
         }
@@ -55,11 +56,58 @@ public struct MotionEffectsOverlay: View {
         }
     }
 
+    private func renderParticles(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(engine.particles()) { particle in
+                let width = number(particle.layout["width"]) ?? 8
+                let height = number(particle.layout["height"]) ?? width
+                let x = particle.channels["offset.x"]?.current ?? 0
+                let y = particle.channels["offset.y"]?.current ?? 0
+                let opacity = MotionRenderStyle.visibleOpacity(particle.channels["opacity"]?.current ?? 1)
+                let scale = particle.channels["scale"]?.current ?? 1
+                let scaleX = particle.channels["scale.x"]?.current ?? 1
+                let scaleY = particle.channels["scale.y"]?.current ?? 1
+                let rotation = particle.channels["rotation"]?.current ?? 0
+                let cornerRadius = number(particle.style["cornerRadius"]) ?? 4
+                let color = MotionRenderStyle.color(for: string(particle.style["backgroundColor"])) ?? Color.clear
+
+                particleView(kind: particle.kind, color: color, cornerRadius: cornerRadius)
+                    .frame(width: CGFloat(width), height: CGFloat(height))
+                    .opacity(opacity)
+                    .scaleEffect(x: scale * scaleX, y: scale * scaleY)
+                    .rotationEffect(.degrees(rotation))
+                    .position(point(x: x, y: y, in: size))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func particleView(kind: MotionNodeKind, color: Color, cornerRadius: Double) -> some View {
+        switch kind {
+        case .circle:
+            Circle().fill(color)
+        case .roundedRectangle:
+            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(color)
+        case .zstack, .vstack, .hstack, .text:
+            Circle().fill(color)
+        }
+    }
+
     private func point(x: Double, y: Double, in size: CGSize) -> CGPoint {
         CGPoint(
             x: (size.width / 2) + CGFloat(x),
             y: (size.height / 2) + CGFloat(y)
         )
+    }
+
+    private func number(_ value: MotionValue?) -> Double? {
+        guard case let .number(number) = value else { return nil }
+        return number
+    }
+
+    private func string(_ value: MotionValue?) -> String? {
+        guard case let .string(string) = value else { return nil }
+        return string
     }
 }
 

@@ -31,8 +31,12 @@ public struct MotionRuntimeView: View {
                         .foregroundStyle(.red)
                         .padding()
                 } else if let rootID = engine.document?.root, let root = engine.node(rootID) {
-                    render(root)
-                    MotionEffectsOverlay(engine: engine, frame: frame)
+                    let shake = engine.screenShakeOffset()
+                    ZStack {
+                        render(root)
+                        MotionEffectsOverlay(engine: engine, frame: frame)
+                    }
+                    .offset(x: shake.x, y: shake.y)
                 } else {
                     ProgressView()
                 }
