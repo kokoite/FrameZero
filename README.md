@@ -391,3 +391,8 @@ The editor should let users:
 
 The runtime already points in that direction: motion is data, the playground proves the control model, and SwiftUI views can opt into JSON-driven motion.
 
+## License
+
+MotionEngineKit is released under the MIT License.
+
+You can use, modify, and distribute the project, but the copyright notice and license text must be included in copies or substantial portions of the software. In simple terms: use it freely, but keep the credit.
