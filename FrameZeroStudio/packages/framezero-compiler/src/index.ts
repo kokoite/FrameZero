@@ -36,6 +36,7 @@ export type StudioNode = {
   style: Record<string, MotionValue>;
   fills?: MotionFill[];
   presentation: Record<string, MotionValue>;
+  componentId?: string;
   locked?: boolean;
   hiddenInEditor?: boolean;
 };

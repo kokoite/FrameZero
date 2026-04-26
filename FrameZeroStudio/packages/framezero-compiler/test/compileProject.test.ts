@@ -46,6 +46,17 @@ describe("compileStudioProject", () => {
     expect(card?.fills).toEqual(project.nodes.card.fills);
   });
 
+  it("strips Studio-only component instance metadata from runtime nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.componentId = "heroCard";
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).toBeDefined();
+    expect(JSON.stringify(card)).not.toContain("componentId");
+  });
+
   it("produces deterministic JSON", () => {
     const first = compileStudioProject(parallelComponentsProject).json;
     const second = compileStudioProject(parallelComponentsProject).json;

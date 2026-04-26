@@ -14,6 +14,7 @@ import "./styles.css";
 type TargetMode = "selected" | "role";
 type NodeKindChoice = StudioNode["kind"];
 type SendState = "idle" | "sending" | "sent" | "failed";
+type WorkspaceMode = "design" | "animate";
 type PreviewTransform = {
   x: number;
   y: number;
@@ -97,8 +98,8 @@ type HapticAction = MotionAction & {
 };
 
 const storageKey = "framezero.studio.project.v4";
-const canvasWidth = 360;
-const canvasHeight = 340;
+const canvasWidth = 600;
+const canvasHeight = 400;
 const canvasCenter = { x: canvasWidth / 2, y: canvasHeight / 2 };
 const transformProperties: MotionPropertySelector["properties"] = ["offset.x", "offset.y", "rotation", "scale", "opacity"];
 
@@ -109,9 +110,10 @@ function App() {
   const [targetMode, setTargetMode] = useState<TargetMode>("selected");
   const [sendState, setSendState] = useState<SendState>("idle");
   const [bridgeMessage, setBridgeMessage] = useState("Bridge idle");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("design");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
-  const [selectedComponentId, setSelectedComponentId] = useState(Object.keys(project.components)[0] ?? "");
+  const [selectedComponentId, setSelectedComponentId] = useState("");
 
   const compileResult = useMemo(() => {
     try {
@@ -122,7 +124,7 @@ function App() {
   }, [project]);
 
   const selectedNode = project.nodes[selectedNodeId] ?? project.nodes[project.rootNodeId];
-  const selectedComponent = project.components[selectedComponentId] ?? Object.values(project.components)[0];
+  const selectedComponent = project.components[selectedComponentId];
   const selectedPhase = project.phases[selectedPhaseId] ?? project.phases[project.phaseOrder[0] ?? ""];
   const phaseTargets = selectedPhase ? readPhaseTargets(selectedPhase, selectedNode, targetMode) : defaultPhaseTargets();
   const activeSelector = selectedNode ? selectorForTarget(project, selectedNode, targetMode) : undefined;
@@ -254,7 +256,7 @@ function App() {
       }
       draft.editor = { selection: [node.id], viewportPreset: "iphone" };
       setSelectedNodeId(node.id);
-      setSelectedComponentId(component.id);
+      setSelectedComponentId("");
     });
   }
 
@@ -262,7 +264,12 @@ function App() {
     if (!selectedComponent) return;
     patchProject((draft) => {
       const component = draft.components[selectedComponent.id];
-      if (component) updater(component);
+      if (!component) return;
+      updater(component);
+      syncInstancesOfComponent(draft, component.id);
+      for (const role of componentRoles(component)) {
+        draft.roles[role] ??= { id: role, name: role };
+      }
     });
   }
 
@@ -270,8 +277,13 @@ function App() {
     if (!selectedComponent) return;
     patchProject((draft) => {
       delete draft.components[selectedComponent.id];
-      const nextId = Object.keys(draft.components)[0] ?? "";
-      setSelectedComponentId(nextId);
+      for (const node of Object.values(draft.nodes)) {
+        if (node.componentId !== selectedComponent.id) continue;
+        delete node.componentId;
+        node.roles = node.roles.filter((role) => role !== `component:${selectedComponent.id}`);
+        if (node.roles.length === 0) node.roles = ["actor"];
+      }
+      setSelectedComponentId("");
     });
   }
 
@@ -300,8 +312,12 @@ function App() {
       const node = draft.nodes[selectedNode.id];
       if (!node) return;
       const role = slug(value || "actor");
-      node.roles = [role];
+      node.roles = uniqueStrings([role, ...(node.componentId ? [`component:${node.componentId}`] : [])]);
       draft.roles[role] ??= { id: role, name: role };
+      if (node.componentId) {
+        const componentRole = `component:${node.componentId}`;
+        draft.roles[componentRole] ??= { id: componentRole, name: componentRole };
+      }
     });
   }
 
@@ -318,13 +334,7 @@ function App() {
       const selector: MotionPropertySelector = targetMode === "role" && selectedNode?.roles[0]
         ? { role: selectedNode.roles[0], properties: [property] }
         : { id: selectedNode?.id ?? project.rootNodeId, properties: [property] };
-      const index = phase.targets.findIndex((target) => sameTarget(target, selector));
-      const assignment = { select: selector, value } satisfies MotionAssignment;
-      if (index >= 0) {
-        phase.targets[index] = assignment;
-      } else {
-        phase.targets.push(assignment);
-      }
+      setPhaseTargetValue(phase, selector, value);
       ensureRuleCovers(phase, selector, property);
     });
   }
@@ -515,7 +525,7 @@ function App() {
     setProject(fresh);
     setSelectedNodeId(fresh.editor?.selection[0] ?? fresh.rootNodeId);
     setSelectedPhaseId(fresh.phaseOrder[0] ?? "");
-    setSelectedComponentId(Object.keys(fresh.components)[0] ?? "");
+    setSelectedComponentId("");
     setBridgeMessage("Reset to fixture");
   }
 
@@ -545,6 +555,71 @@ function App() {
     setPreviewTime(clamp(value, 0, previewPlan.totalDuration));
   }
 
+  function startCanvasDrag(nodeId: string, event: React.PointerEvent<HTMLDivElement>) {
+    const canvas = event.currentTarget.closest(".phone-canvas");
+    if (!(canvas instanceof HTMLElement)) return;
+    const canvasElement = canvas;
+
+    const node = project.nodes[nodeId];
+    if (!node || node.id === project.rootNodeId) return;
+    const dragMode = workspaceMode;
+    const phaseIdForDrag = selectedPhaseId;
+
+    setSelectedNodeId(nodeId);
+    setIsPreviewing(false);
+    setPreviewTime(0);
+    event.preventDefault();
+    event.stopPropagation();
+
+    const canvasPoint = pointInCanvas(canvasElement, event.clientX, event.clientY);
+    const initialTargets = dragMode === "animate" && selectedPhase
+      ? readPhaseTargets(selectedPhase, node, "selected")
+      : baseTargetsFromNode(node);
+    const initialOrigin = { x: initialTargets.x, y: initialTargets.y };
+    const grabOffset = {
+      x: initialOrigin.x - canvasPoint.x,
+      y: initialOrigin.y - canvasPoint.y
+    };
+
+    function move(moveEvent: PointerEvent) {
+      const point = pointInCanvas(canvasElement, moveEvent.clientX, moveEvent.clientY);
+      const nextX = round(point.x + grabOffset.x);
+      const nextY = round(point.y + grabOffset.y);
+
+      setProject((current) => {
+        const draft = cloneProject(current);
+        const movingNode = draft.nodes[nodeId];
+        if (!movingNode) return current;
+
+        if (dragMode === "animate" && phaseIdForDrag !== "") {
+          const phase = draft.phases[phaseIdForDrag];
+          if (phase) {
+            setPhaseTargetValue(phase, { id: nodeId, properties: ["offset.x"] }, nextX);
+            setPhaseTargetValue(phase, { id: nodeId, properties: ["offset.y"] }, nextY);
+            ensureRuleCovers(phase, { id: nodeId, properties: ["offset.x", "offset.y"] }, "offset.x");
+            ensureRuleCovers(phase, { id: nodeId, properties: ["offset.x", "offset.y"] }, "offset.y");
+          }
+        } else {
+          movingNode.presentation["offset.x"] = nextX;
+          movingNode.presentation["offset.y"] = nextY;
+        }
+        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [nodeId] };
+        saveStoredProject(draft);
+        return draft;
+      });
+    }
+
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  }
+
   return (
     <main className="studio-shell">
       <header className="app-toolbar">
@@ -554,6 +629,12 @@ function App() {
         </div>
 
         <div className="tool-strip" aria-label="Add components">
+          <button type="button" className={workspaceMode === "design" ? "mode-tab active" : "mode-tab"} onClick={() => {
+            stopWebPreview();
+            setWorkspaceMode("design");
+          }}>Design</button>
+          <button type="button" className={workspaceMode === "animate" ? "mode-tab active" : "mode-tab"} onClick={() => setWorkspaceMode("animate")}>Animate</button>
+          <span className="toolbar-divider" />
           <button type="button" onClick={() => addNode("circle")}>Circle</button>
           <button type="button" onClick={() => addNode("roundedRectangle")}>Rectangle</button>
           <button type="button" onClick={() => addNode("text")}>Text</button>
@@ -592,20 +673,20 @@ function App() {
 
         <section>
           <div className="section-heading">
-            <h2>Components</h2>
+            <h2>Assets</h2>
             <span>{Object.keys(project.components).length}</span>
           </div>
           <div className="button-grid">
-            <button type="button" onClick={() => createComponent("circle")}>New Circle</button>
-            <button type="button" onClick={() => createComponent("roundedRectangle")}>New Card</button>
-            <button type="button" onClick={() => createComponent("text")}>New Text</button>
-            <button type="button" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>From Selected</button>
+            <button type="button" className="primary field-wide" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Create Component</button>
+            <button type="button" onClick={() => createComponent("circle")}>Blank Circle</button>
+            <button type="button" onClick={() => createComponent("roundedRectangle")}>Blank Card</button>
+            <button type="button" onClick={() => createComponent("text")}>Blank Text</button>
           </div>
           <div className="component-list">
             {Object.values(project.components).map((component) => (
               <button
                 type="button"
-                className={`component-row ${selectedComponent?.id === component.id ? "selected" : ""}`}
+                className={`component-row ${selectedComponentId === component.id ? "selected" : ""}`}
                 key={component.id}
                 onClick={() => setSelectedComponentId(component.id)}
               >
@@ -630,7 +711,7 @@ function App() {
                     }
                   }}
                 >
-                  Use
+                  Place
                 </span>
               </button>
             ))}
@@ -677,7 +758,7 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">Canvas</p>
-            <h2>{isPreviewing || previewTime > 0 ? `Preview ${previewTime.toFixed(2)}s` : selectedNode?.name ?? "No object selected"}</h2>
+            <h2>{isPreviewing || previewTime > 0 ? `Preview ${previewTime.toFixed(2)}s` : `${workspaceMode === "design" ? "Design" : "Animate"} · ${selectedNode?.name ?? "No object selected"}`}</h2>
           </div>
           <div className={`runtime-status ${compileResult.ok ? "ok" : "bad"}`}>
             <span className="status-light" />
@@ -703,14 +784,15 @@ function App() {
                   key={node.id}
                   node={node}
                   selected={node.id === selectedNodeId}
+                  onPointerDown={(event) => startCanvasDrag(node.id, event)}
                   {...(previewFrame.transforms[node.id] ? { previewTransform: previewFrame.transforms[node.id] } : {})}
-                  {...(selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
+                  {...(workspaceMode === "animate" && selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
                 />
               ))}
             {previewFrame.visuals.map((visual) => (
               <PreviewVisualNode visual={visual} key={visual.id} />
             ))}
-            {selectedPhase ? <MotionGuide phase={selectedPhase} node={selectedNode} targetMode={targetMode} /> : null}
+            {workspaceMode === "animate" && selectedPhase ? <MotionGuide phase={selectedPhase} node={selectedNode} targetMode={targetMode} /> : null}
           </div>
         </div>
       </section>
@@ -728,9 +810,10 @@ function App() {
           <p className={`bridge-message ${sendState}`}>{bridgeMessage}</p>
         </section>
 
+        {workspaceMode === "design" ? (
         <section>
           <div className="section-heading">
-            <h2>Component Library</h2>
+            <h2>Asset Properties</h2>
             {selectedComponent ? <button type="button" className="danger" onClick={deleteSelectedComponent}>Delete Component</button> : null}
           </div>
           {selectedComponent ? (
@@ -782,13 +865,15 @@ function App() {
                 onChange={(style) => updateSelectedComponent((component) => { component.style = style; })}
                 onFillsChange={(fills) => updateSelectedComponent((component) => { component.fills = fills; })}
               />
-              <button type="button" className="primary full-width" onClick={() => instantiateComponent(selectedComponent.id)}>Add Component To Canvas</button>
+              <button type="button" className="primary full-width" onClick={() => instantiateComponent(selectedComponent.id)}>Place Instance</button>
             </>
           ) : (
-            <p className="inline-note">Create reusable circles, cards, labels, and styled assets here. Then place them on the canvas and animate them in phases.</p>
+            <p className="inline-note">Select an asset from the left Project panel to edit its shape, size, fill, and gradient. Assets are reusable; placing one on the canvas creates a layer instance.</p>
           )}
         </section>
+        ) : null}
 
+        {workspaceMode === "design" ? (
         <section>
           <div className="section-heading">
             <h2>Inspector</h2>
@@ -796,6 +881,9 @@ function App() {
           </div>
           {selectedNode ? (
             <>
+              {selectedNode.componentId ? (
+                <p className="inline-note">Instance of {project.components[selectedNode.componentId]?.name ?? selectedNode.componentId}. Edit the asset to update all instances, or move this instance independently on the canvas.</p>
+              ) : null}
               <div className="form-grid">
                 <label>Name<input value={selectedNode.name} onChange={(event) => updateSelectedNode((node) => { node.name = event.target.value; })} /></label>
                 <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label>
@@ -817,8 +905,9 @@ function App() {
             </>
           ) : null}
         </section>
+        ) : null}
 
-        {selectedPhase ? (
+        {workspaceMode === "animate" && selectedPhase ? (
           <section>
             <div className="section-heading">
               <h2>Animation</h2>
@@ -905,6 +994,24 @@ function App() {
       </aside>
 
       <section className="timeline-panel">
+        {workspaceMode === "design" ? (
+          <div className="design-flow">
+            <div>
+              <p className="eyebrow">Design Flow</p>
+              <h2>Components stay independent. Place instances, then animate those layers.</h2>
+            </div>
+            <div className="flow-steps" aria-label="Design workflow">
+              <span>Layer</span>
+              <i />
+              <span>Component Asset</span>
+              <i />
+              <span>Placed Instance</span>
+              <i />
+              <span>Animate</span>
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="timeline-header">
           <div>
             <p className="eyebrow">Timeline</p>
@@ -964,6 +1071,8 @@ function App() {
             })}
           </div>
         </div>
+        </>
+        )}
       </section>
     </main>
   );
@@ -1398,12 +1507,14 @@ function CanvasNode({
   node,
   selected,
   phaseTargets,
-  previewTransform
+  previewTransform,
+  onPointerDown
 }: {
   node: StudioNode;
   selected: boolean;
   phaseTargets?: ReturnType<typeof defaultPhaseTargets>;
   previewTransform?: PreviewTransform | undefined;
+  onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
 }) {
   const originX = numberValue(node.presentation["offset.x"]);
   const originY = numberValue(node.presentation["offset.y"]);
@@ -1431,7 +1542,7 @@ function CanvasNode({
   } satisfies React.CSSProperties;
 
   return (
-    <div className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""}`} style={style}>
+    <div className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""}`} style={style} onPointerDown={onPointerDown}>
       {node.kind === "text" ? String(node.style.text ?? node.name) : node.name}
     </div>
   );
@@ -1903,8 +2014,13 @@ function defaultFills(kind: NodeKindChoice): MotionFill[] {
   }];
 }
 
+function defaultLayout(kind: NodeKindChoice): StudioNode["layout"] {
+  if (kind === "text") return {};
+  return { width: kind === "circle" ? 72 : 150, height: kind === "circle" ? 72 : 86 };
+}
+
 function defaultComponent(id: string, name: string, kind: NodeKindChoice): StudioComponent {
-  const layout = kind === "text" ? {} : { width: kind === "circle" ? 72 : 150, height: kind === "circle" ? 72 : 86 };
+  const layout = defaultLayout(kind);
   const style = kind === "text"
     ? { text: name, foregroundColor: "#FFFFFF", backgroundColor: "#232327" }
     : {
@@ -2021,19 +2137,24 @@ function componentFromNode(id: string, node: StudioNode): StudioComponent {
   };
 }
 
+function componentRoles(component: StudioComponent) {
+  return uniqueStrings([...(component.roles?.length ? component.roles : ["actor"]), `component:${component.id}`]);
+}
+
 function nodeFromComponent(component: StudioComponent, records: Record<string, StudioNode>, rootNodeId: string): StudioNode {
   const kind = component.kind ?? "circle";
   const id = uniqueId(slug(component.name || kind), records);
+  const style = component.style ?? defaultStyle(kind, component.name);
   return {
     id,
     name: component.name,
     kind,
     parentId: rootNodeId,
     childIds: [],
-    roles: component.roles?.length ? [...component.roles] : ["actor"],
-    layout: clone(component.layout ?? (kind === "text" ? {} : { width: kind === "circle" ? 72 : 150, height: kind === "circle" ? 72 : 86 })),
-    style: clone(component.style ?? defaultStyle(kind, component.name)),
-    fills: clone(component.fills ?? fillsFromStyle(component.style ?? defaultStyle(kind, component.name), kind)),
+    roles: componentRoles(component),
+    layout: clone(component.layout ?? defaultLayout(kind)),
+    style: clone(style),
+    fills: clone(component.fills ?? fillsFromStyle(style, kind)),
     presentation: {
       "offset.x": 0,
       "offset.y": 0,
@@ -2041,8 +2162,29 @@ function nodeFromComponent(component: StudioComponent, records: Record<string, S
       scale: 1,
       opacity: 1,
       ...(component.presentation ?? {})
-    }
+    },
+    componentId: component.id
   };
+}
+
+function syncInstancesOfComponent(project: StudioProject, componentId: string) {
+  const component = project.components[componentId];
+  if (!component) return;
+
+  const kind = component.kind ?? "circle";
+  const style = component.style ?? defaultStyle(kind, component.name);
+  const layout = component.layout ?? defaultLayout(kind);
+  const fills = component.fills ?? fillsFromStyle(style, kind);
+  const roles = componentRoles(component);
+
+  for (const node of Object.values(project.nodes)) {
+    if (node.componentId !== componentId) continue;
+    node.kind = kind;
+    node.layout = clone(layout);
+    node.style = clone(style);
+    node.fills = clone(fills);
+    node.roles = [...roles];
+  }
 }
 
 function visualBackground(style: Record<string, unknown>, kind: NodeKindChoice, fills: MotionFill[] = []) {
@@ -2101,6 +2243,16 @@ function numberFromFill(fill: MotionFill, key: "angle", fallback: number) {
   return fill.type === "linearGradient" && typeof fill[key] === "number" ? fill[key] : fallback;
 }
 
+function pointInCanvas(canvas: HTMLElement, clientX: number, clientY: number) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvasWidth / Math.max(rect.width, 1);
+  const scaleY = canvasHeight / Math.max(rect.height, 1);
+  return {
+    x: (clientX - rect.left) * scaleX - canvasWidth / 2,
+    y: (clientY - rect.top) * scaleY - canvasHeight / 2
+  };
+}
+
 function isHexColor(value: string) {
   return /^#[0-9A-Fa-f]{6}$/.test(value);
 }
@@ -2123,6 +2275,10 @@ function uniqueId(base: string, records: Record<string, unknown>) {
     index += 1;
   }
   return id;
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
 }
 
 function readPhaseTargets(phase: StudioPhase, node: StudioNode | undefined, targetMode: TargetMode) {
@@ -2175,6 +2331,16 @@ function assignment(
   value: number
 ): MotionAssignment {
   return { select: { id: nodeId, properties: [property] }, value };
+}
+
+function setPhaseTargetValue(phase: StudioPhase, selector: MotionPropertySelector, value: number) {
+  const index = phase.targets.findIndex((target) => sameTarget(target, selector));
+  const assignment = { select: selector, value } satisfies MotionAssignment;
+  if (index >= 0) {
+    phase.targets[index] = assignment;
+  } else {
+    phase.targets.push(assignment);
+  }
 }
 
 function ensureRuleCovers(
