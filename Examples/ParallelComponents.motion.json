@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "root": "screen",
+  "nodes": [
+    {
+      "id": "screen",
+      "kind": "zstack",
+      "roles": ["screen"],
+      "layout": {},
+      "style": { "backgroundColor": "#0B1020" },
+      "presentation": {},
+      "children": ["card", "icon", "title"]
+    },
+    {
+      "id": "card",
+      "kind": "roundedRectangle",
+      "roles": ["tapTarget", "gesturePart"],
+      "layout": { "width": 170, "height": 96 },
+      "style": { "backgroundColor": "#0EA5E9", "cornerRadius": 18 },
+      "presentation": { "offset.x": 0, "offset.y": 0, "scale": 1, "opacity": 1 },
+      "children": []
+    },
+    {
+      "id": "icon",
+      "kind": "circle",
+      "roles": ["gesturePart"],
+      "layout": { "width": 42, "height": 42 },
+      "style": { "backgroundColor": "#FFFFFF" },
+      "presentation": { "offset.x": 0, "offset.y": -18, "scale": 1, "opacity": 1 },
+      "children": []
+    },
+    {
+      "id": "title",
+      "kind": "text",
+      "roles": ["gestureCopy"],
+      "layout": {},
+      "style": { "text": "Drag ready", "foregroundColor": "#FFFFFF" },
+      "presentation": { "offset.x": 0, "offset.y": 0, "scale": 1, "opacity": 0.35 },
+      "children": []
+    }
+  ],
+  "machines": [
+    {
+      "id": "gestureMachine",
+      "initial": "idle",
+      "states": [
+        {
+          "id": "idle",
+          "values": [
+            { "select": { "role": "gesturePart", "properties": ["offset.x"] }, "value": 0 },
+            { "select": { "role": "gesturePart", "properties": ["scale"] }, "value": 1 },
+            { "select": { "id": "title", "properties": ["offset.y"] }, "value": 0 },
+            { "select": { "id": "title", "properties": ["opacity"] }, "value": 0.35 }
+          ]
+        },
+        {
+          "id": "communicatingGesture",
+          "values": [
+            { "select": { "role": "gesturePart", "properties": ["offset.x"] }, "value": 64 },
+            { "select": { "role": "gesturePart", "properties": ["scale"] }, "value": 1.2 },
+            { "select": { "id": "title", "properties": ["offset.y"] }, "value": -24 },
+            { "select": { "id": "title", "properties": ["opacity"] }, "value": 1 }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "id": "gestureCue",
+          "from": "idle",
+          "to": "communicatingGesture",
+          "trigger": "tapCard",
+          "rules": [
+            {
+              "select": { "role": "gesturePart", "properties": ["offset.x", "scale"] },
+              "motion": { "type": "spring", "response": 0.35, "dampingFraction": 0.78 }
+            },
+            {
+              "select": { "id": "title", "properties": ["offset.y", "opacity"] },
+              "motion": { "type": "timed", "duration": 0.25, "easing": "easeOut" }
+            }
+          ],
+          "arcs": [],
+          "jiggles": [],
+          "enter": [],
+          "exit": [],
+          "spawns": [],
+          "actions": [
+            { "type": "haptic", "style": "medium", "intensity": 0.7 }
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    { "id": "tapCard", "type": "tap", "selector": { "id": "card" } }
+  ],
+  "dragBindings": [],
+  "bodies": [],
+  "forces": []
+}

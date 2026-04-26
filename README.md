@@ -100,6 +100,51 @@ The engine supports scalar animation channels such as:
 
 Uniform `scale` can be combined with `scale.x` and `scale.y` for stretch effects.
 
+### Parallel Existing Components
+
+FrameZero can animate multiple existing UI components in one transition. This is different from particles or spawned temporary components.
+
+Use shared `roles` when several real nodes should move together:
+
+```json
+{
+  "id": "card",
+  "kind": "roundedRectangle",
+  "roles": ["tapTarget", "gesturePart"],
+  "presentation": { "offset.x": 0, "scale": 1 }
+}
+```
+
+Then target the whole group from transition rules:
+
+```json
+{
+  "select": {
+    "role": "gesturePart",
+    "properties": ["offset.x", "scale"]
+  },
+  "motion": {
+    "type": "spring",
+    "response": 0.35,
+    "dampingFraction": 0.78
+  }
+}
+```
+
+For choreography where each component needs a different target, put multiple assignments in the same state. They all retarget during the same transition, so they animate in parallel:
+
+```json
+[
+  { "select": { "id": "card", "properties": ["offset.x"] }, "value": 64 },
+  { "select": { "id": "icon", "properties": ["offset.y"] }, "value": -24 },
+  { "select": { "id": "title", "properties": ["opacity"] }, "value": 1 }
+]
+```
+
+This is the right model for gesture communication: a card can lift, an icon can pull toward the finger, a label can fade in, and a background can stretch, all from one state change.
+
+Particles are for repeated visual effects. `spawnComponents` is for temporary overlay content. Existing app UI should be animated through normal nodes, state values, and selectors.
+
 ### Motion Rules
 
 Supported motion types:
@@ -373,6 +418,7 @@ See:
 
 - `Examples/ReactiveCard.motion.json`
 - `Examples/Phase1Card.motion.json`
+- `Examples/ParallelComponents.motion.json`
 - `AnimationEngine/Resources/Phase1Card.motion.json`
 
 ## Current Status
