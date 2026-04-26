@@ -62,13 +62,21 @@ That means a designer, developer, tool, or eventually a Mac editor can produce a
 
 The long-term idea is a creative motion tool for apps: build alive, game-like, physics-based UI interactions without rewriting animation code every time.
 
-## FrameZero Studio Plan
+## FrameZero Studio
 
-The next authoring step is FrameZero Studio: a local-first web editor that creates FrameZero JSON and previews it in the iOS simulator through `MotionEngineKit`.
+FrameZero Studio is the local-first web editor for creating FrameZero JSON and previewing it in the iOS simulator through `MotionEngineKit`.
 
 The Phase 0 contracts live in [`Documentation/Contracts`](Documentation/Contracts/README.md). They define the product workflow, runtime JSON shape, Studio project format, local iOS preview protocol, and multi-agent merge/review process.
 
-The local Studio foundation lives in [`FrameZeroStudio`](FrameZeroStudio/README.md). It currently contains the TypeScript schema mirror, Studio-to-motion JSON compiler, fixtures, and a minimal web shell.
+The Studio workspace lives in [`FrameZeroStudio`](FrameZeroStudio/README.md). It contains the TypeScript schema mirror, Studio-to-motion JSON compiler, local bridge, editable web authoring surface, and simulator preview sync.
+
+Run it locally:
+
+```bash
+cd FrameZeroStudio
+pnpm install
+pnpm dev
+```
 
 ## Current Support
 

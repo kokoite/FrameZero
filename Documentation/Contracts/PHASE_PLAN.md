@@ -23,6 +23,8 @@ Acceptance:
 
 Goal: create a local browser editor that can author a basic FrameZero animation and export valid JSON.
 
+Status: shipped locally.
+
 Parallel tasks:
 
 - Editor shell: layout, top bar, layers panel, inspector shell.
@@ -43,6 +45,8 @@ Acceptance:
 
 Goal: Web Studio sends generated JSON to the simulator and receives runtime apply/reject feedback.
 
+Status: shipped locally.
+
 Parallel tasks:
 
 - Local bridge server.
@@ -61,6 +65,8 @@ Acceptance:
 ## Phase 3: Full Local Authoring
 
 Goal: make the local editor useful for designers without hand-writing JSON.
+
+Status: first shipped slice. The Studio can add components, assign roles, edit phases, add arc/jiggle/action controls, export JSON, persist locally, and send to the simulator. Dragging on-canvas, multi-select editing, reordering, and richer visual inspection remain future work.
 
 Parallel tasks:
 
@@ -112,4 +118,3 @@ Potential later services:
 - Shared remote preview sessions.
 
 Cloud must not change the local project format or local preview loop.
-

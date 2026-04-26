@@ -327,6 +327,77 @@ export type MotionNodeSelector = z.infer<typeof nodeSelectorSchema>;
 export type MotionAssignment = z.infer<typeof motionAssignmentSchema>;
 export type MotionRule = z.infer<typeof motionRuleSchema>;
 
+export const previewEnvelopeSchema = z.object({
+  protocolVersion: z.literal(1),
+  sessionId: z.string().min(1),
+  messageId: z.string().min(1),
+  type: z.enum([
+    "hello",
+    "hello.ack",
+    "document.update",
+    "document.result",
+    "playback.command",
+    "playback.result",
+    "error"
+  ]),
+  sentAt: z.string().min(1),
+  payload: z.unknown()
+});
+
+export const documentUpdatePayloadSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  documentId: z.string().min(1),
+  documentHash: z.string().min(1),
+  reason: z.string().min(1),
+  autoPlay: z.boolean().default(true),
+  resetBeforePlay: z.boolean().default(true),
+  json: motionDocumentSchema
+});
+
+export const documentResultPayloadSchema = z.discriminatedUnion("status", [
+  z.object({
+    revision: z.number().int().nonnegative(),
+    documentHash: z.string().min(1),
+    status: z.literal("applied"),
+    runtime: z
+      .object({
+        root: z.string().min(1),
+        nodeCount: z.number().int().nonnegative(),
+        machineCount: z.number().int().nonnegative()
+      })
+      .optional()
+  }),
+  z.object({
+    revision: z.number().int().nonnegative(),
+    documentHash: z.string().min(1).optional(),
+    status: z.literal("rejected"),
+    error: z.object({
+      code: z.string().min(1),
+      message: z.string().min(1)
+    }),
+    keptRevision: z.number().int().nonnegative().optional()
+  })
+]);
+
+export type PreviewEnvelope = z.infer<typeof previewEnvelopeSchema>;
+export type DocumentUpdatePayload = z.infer<typeof documentUpdatePayloadSchema>;
+export type DocumentResultPayload = z.infer<typeof documentResultPayloadSchema>;
+
+export function makePreviewEnvelope(
+  type: PreviewEnvelope["type"],
+  payload: unknown,
+  options: { sessionId?: string; messageId?: string; sentAt?: string } = {}
+): PreviewEnvelope {
+  return {
+    protocolVersion: 1,
+    sessionId: options.sessionId ?? "local",
+    messageId: options.messageId ?? globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+    type,
+    sentAt: options.sentAt ?? new Date().toISOString(),
+    payload
+  };
+}
+
 export function parseMotionDocument(input: unknown): MotionDocument {
   return motionDocumentSchema.parse(input);
 }

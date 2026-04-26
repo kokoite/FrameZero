@@ -8,6 +8,7 @@ The Studio edits an authoring project, compiles it to the current FrameZero `.mo
 
 ```text
 apps/studio-web              local browser UI
+apps/studio-bridge           local HTTP/WebSocket bridge to iOS Simulator
 packages/framezero-schema    TypeScript/Zod mirror of schemaVersion 1
 packages/framezero-compiler  StudioProject -> .motion.json compiler
 packages/framezero-fixtures  reusable authoring fixtures
@@ -23,22 +24,41 @@ pnpm build
 pnpm dev
 ```
 
-`pnpm dev` starts the local web shell at:
+`pnpm dev` starts both local services:
 
 ```text
-http://127.0.0.1:5173/
+Web Studio:      http://127.0.0.1:5173/
+Preview bridge:  http://127.0.0.1:8787/health
+Simulator WS:    ws://127.0.0.1:8787/framezero/preview?session=local&client=ios-simulator&protocol=1
+```
+
+You can also run them separately:
+
+```bash
+pnpm dev:web
+pnpm dev:bridge
 ```
 
 ## Current Foundation
 
-The first fixture demonstrates the important Phase 1 contract: multiple existing UI nodes can share a role and animate in parallel through one transition.
+The Studio now supports the local authoring loop:
 
-The web shell currently shows:
+- add `circle`, `roundedRectangle`, and `text` components;
+- edit component size, color, text, origin, and role;
+- target either a selected component or every component sharing a role;
+- edit phase targets for x, y, scale, rotation, opacity;
+- choose spring, timed, or immediate motion behavior;
+- add arc, jiggle, particles, spawned temporary components, screen shake, and haptics;
+- persist the Studio project in local storage;
+- export generated `.motion.json`;
+- send the generated JSON to the iOS simulator through the local bridge.
 
-- scene layers;
-- roles;
-- an approximate local canvas;
-- generated `.motion.json`;
-- schema/compiler validation through tests.
+The browser canvas is still advisory. The iOS simulator remains the runtime authority because it loads generated documents through `MotionEngineKit`.
 
-The browser preview is not the runtime authority. The iOS simulator preview will be added in the next phase and will validate generated documents through `MotionEngineKit`.
+## Preview Loop
+
+1. Start the bridge and web app with `pnpm dev`.
+2. Run the iOS sample app in the simulator.
+3. Create or edit components and phases in the browser.
+4. Press **Send to Simulator**.
+5. The bridge validates the document, broadcasts it to the simulator, and shows whether the simulator accepted it.

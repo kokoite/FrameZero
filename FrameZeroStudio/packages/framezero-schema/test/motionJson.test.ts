@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeParseMotionDocument } from "../src/index";
+import { documentUpdatePayloadSchema, makePreviewEnvelope, previewEnvelopeSchema, safeParseMotionDocument } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts a role selector that targets multiple existing components", () => {
@@ -101,5 +101,43 @@ describe("motionDocumentSchema", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("preview protocol schemas", () => {
+  it("wraps preview messages in a versioned envelope", () => {
+    const envelope = makePreviewEnvelope("hello", { client: "ios-simulator" }, { sessionId: "local", messageId: "test-id" });
+
+    expect(previewEnvelopeSchema.parse(envelope)).toMatchObject({
+      protocolVersion: 1,
+      sessionId: "local",
+      messageId: "test-id",
+      type: "hello"
+    });
+  });
+
+  it("validates document update payloads with full motion JSON", () => {
+    const payload = documentUpdatePayloadSchema.parse({
+      revision: 1,
+      documentId: "demo",
+      documentHash: "sha256:test",
+      reason: "test",
+      autoPlay: true,
+      resetBeforePlay: true,
+      json: {
+        schemaVersion: 1,
+        root: "screen",
+        nodes: [
+          { id: "screen", kind: "zstack", roles: ["screen"], layout: {}, style: {}, presentation: {}, children: [] }
+        ],
+        machines: [],
+        triggers: [],
+        dragBindings: [],
+        bodies: [],
+        forces: []
+      }
+    });
+
+    expect(payload.json.root).toBe("screen");
   });
 });

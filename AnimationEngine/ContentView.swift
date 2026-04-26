@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MotionEngineKit
+import Combine
 import os
 
 private enum SampleTypography {
@@ -29,6 +30,7 @@ struct ContentView: View {
     }()
     private static let logger = Logger(subsystem: "com.pranjal.agarwal.demofirstapp.AnimationEngine", category: "FrameZeroPlayground")
 
+    @StateObject private var previewSync: PreviewSyncClient
     @State private var frame = 0
     @State private var clip = MotionClip.wideArcPhase
     @State private var savedPhases = MotionClip.samples
@@ -36,6 +38,10 @@ struct ContentView: View {
     @State private var selectedPhaseID: UUID? = MotionClip.wideArcPhase.id
     @State private var status = "Ready"
     @State private var autoPreviewTask: Task<Void, Never>?
+
+    init() {
+        _previewSync = StateObject(wrappedValue: PreviewSyncClient(engine: Self.engine))
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -59,6 +65,11 @@ struct ContentView: View {
             .background(Color(red: 0.055, green: 0.055, blue: 0.075))
         }
         .onAppear {
+            previewSync.onApplied = {
+                frame += 1
+                status = previewSync.status
+            }
+            previewSync.connectIfNeeded()
             playAnimation()
         }
         .onChange(of: clip) { _, _ in
@@ -101,6 +112,7 @@ struct ContentView: View {
 
                 HStack(spacing: 8) {
                     Badge(text: "PLAYGROUND", color: .cyan)
+                    Badge(text: previewSync.badgeText, color: previewSync.isConnected ? .green : .orange)
                     Text(status)
                         .font(SampleTypography.caption)
                         .foregroundStyle(.white.opacity(0.76))
@@ -110,6 +122,22 @@ struct ContentView: View {
             }
 
             Spacer(minLength: 8)
+
+            Button {
+                previewSync.reconnect()
+            } label: {
+                Image(systemName: previewSync.isConnected ? "dot.radiowaves.left.and.right" : "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.white.opacity(0.16), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Reconnect Studio preview")
 
             Button {
                 playPrimaryAction()
@@ -852,6 +880,248 @@ struct ContentView: View {
 
     private func n(_ value: Double) -> String {
         String(format: "%.0f", value)
+    }
+}
+
+@MainActor
+private final class PreviewSyncClient: ObservableObject {
+    @Published private(set) var status = "Studio offline"
+    @Published private(set) var isConnected = false
+    @Published private(set) var lastAppliedRevision = 0
+
+    var onApplied: (() -> Void)?
+
+    private let engine: MotionEngine
+    private let logger = Logger(subsystem: "com.pranjal.agarwal.demofirstapp.AnimationEngine", category: "FrameZeroPreviewSync")
+    private var task: URLSessionWebSocketTask?
+    private var reconnectTask: Task<Void, Never>?
+    private var isConnecting = false
+
+    var badgeText: String {
+        if isConnected {
+            return lastAppliedRevision > 0 ? "STUDIO r\(lastAppliedRevision)" : "STUDIO LIVE"
+        }
+        return "STUDIO OFF"
+    }
+
+    init(engine: MotionEngine) {
+        self.engine = engine
+    }
+
+    func connectIfNeeded() {
+        guard task == nil, !isConnecting else { return }
+        connect()
+    }
+
+    func reconnect() {
+        disconnect()
+        connect()
+    }
+
+    private func connect() {
+        guard let url = URL(string: "ws://127.0.0.1:8787/framezero/preview?session=local&client=ios-simulator&protocol=1") else {
+            status = "Invalid Studio bridge URL"
+            return
+        }
+
+        isConnecting = true
+        status = "Connecting Studio"
+        let task = URLSession.shared.webSocketTask(with: url)
+        self.task = task
+        task.resume()
+        isConnecting = false
+        isConnected = true
+        status = "Studio connected"
+        logger.info("preview socket open url=\(url.absoluteString, privacy: .public)")
+        send(type: "hello", payload: [
+            "client": "ios-simulator",
+            "appVersion": "0.1.0",
+            "engineVersion": "MotionEngineKit",
+            "supportedSchemaVersions": [1],
+            "lastAppliedRevision": lastAppliedRevision
+        ])
+        receiveNext(task)
+    }
+
+    private func disconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        isConnecting = false
+        isConnected = false
+        status = "Studio offline"
+    }
+
+    private func receiveNext(_ activeTask: URLSessionWebSocketTask) {
+        activeTask.receive { [weak self] result in
+            guard let client = self else { return }
+            Task { @MainActor in
+                guard client.task === activeTask else { return }
+
+                switch result {
+                case .success(.string(let text)):
+                    client.handle(text: text)
+                    client.receiveNext(activeTask)
+                case .success(.data(let data)):
+                    if let text = String(data: data, encoding: .utf8) {
+                        client.handle(text: text)
+                    }
+                    client.receiveNext(activeTask)
+                case .failure(let error):
+                    client.handleDisconnect(error)
+                @unknown default:
+                    client.receiveNext(activeTask)
+                }
+            }
+        }
+    }
+
+    private func handle(text: String) {
+        guard let data = text.data(using: .utf8),
+              let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = envelope["type"] as? String
+        else {
+            logger.error("preview socket received malformed envelope")
+            return
+        }
+
+        switch type {
+        case "hello.ack":
+            status = "Studio connected"
+        case "document.update":
+            applyDocumentUpdate(envelope["payload"])
+        case "playback.command":
+            send(type: "playback.result", payload: [
+                "status": "applied",
+                "command": "replay",
+                "revision": lastAppliedRevision
+            ])
+            onApplied?()
+        case "error":
+            status = "Studio bridge error"
+            logger.error("preview bridge error \(text, privacy: .public)")
+        default:
+            break
+        }
+    }
+
+    private func applyDocumentUpdate(_ payload: Any?) {
+        guard let payload = payload as? [String: Any],
+              let revision = payload["revision"] as? Int,
+              let json = payload["json"]
+        else {
+            reject(revision: 0, hash: nil, message: "Missing document.update payload")
+            return
+        }
+
+        let hash = payload["documentHash"] as? String
+
+        guard revision > lastAppliedRevision else {
+            logger.info("ignored stale preview revision=\(revision, privacy: .public) current=\(self.lastAppliedRevision, privacy: .public)")
+            return
+        }
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+            guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                throw PreviewSyncError.invalidUTF8
+            }
+
+            try engine.load(jsonString: jsonString)
+            lastAppliedRevision = revision
+            status = "Studio applied r\(revision)"
+            logger.info("applied preview revision=\(revision, privacy: .public) bytes=\(jsonData.count, privacy: .public)")
+            send(type: "document.result", payload: [
+                "revision": revision,
+                "documentHash": hash ?? "unknown",
+                "status": "applied",
+                "runtime": runtimeSummary(json)
+            ])
+            onApplied?()
+        } catch {
+            reject(revision: revision, hash: hash, message: error.localizedDescription)
+        }
+    }
+
+    private func runtimeSummary(_ json: Any) -> [String: Any] {
+        guard let document = json as? [String: Any] else {
+            return [:]
+        }
+
+        return [
+            "root": document["root"] as? String ?? "unknown",
+            "nodeCount": (document["nodes"] as? [Any])?.count ?? 0,
+            "machineCount": (document["machines"] as? [Any])?.count ?? 0
+        ]
+    }
+
+    private func reject(revision: Int, hash: String?, message: String) {
+        status = "Studio rejected r\(revision)"
+        logger.error("rejected preview revision=\(revision, privacy: .public) error=\(message, privacy: .public)")
+        send(type: "document.result", payload: [
+            "revision": revision,
+            "documentHash": hash ?? "unknown",
+            "status": "rejected",
+            "error": [
+                "code": "validation_failed",
+                "message": message
+            ],
+            "keptRevision": lastAppliedRevision
+        ])
+    }
+
+    private func send(type: String, payload: Any) {
+        guard let task else { return }
+
+        let envelope: [String: Any] = [
+            "protocolVersion": 1,
+            "sessionId": "local",
+            "messageId": UUID().uuidString,
+            "type": type,
+            "sentAt": ISO8601DateFormatter().string(from: Date()),
+            "payload": payload
+        ]
+
+        guard JSONSerialization.isValidJSONObject(envelope),
+              let data = try? JSONSerialization.data(withJSONObject: envelope),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            logger.error("could not encode preview envelope type=\(type, privacy: .public)")
+            return
+        }
+
+        task.send(.string(text)) { [weak self] error in
+            guard let error else { return }
+            guard let client = self else { return }
+            Task { @MainActor in
+                client.logger.error("preview socket send failed type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func handleDisconnect(_ error: Error) {
+        logger.error("preview socket closed error=\(error.localizedDescription, privacy: .public)")
+        task = nil
+        isConnected = false
+        status = "Studio reconnecting"
+        reconnectTask?.cancel()
+        reconnectTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            connectIfNeeded()
+        }
+    }
+}
+
+private enum PreviewSyncError: LocalizedError {
+    case invalidUTF8
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8:
+            return "Preview JSON could not be encoded as UTF-8"
+        }
     }
 }
 

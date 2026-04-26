@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @framezero/studio-web dev",
+    "dev": "pnpm --parallel --stream --filter @framezero/studio-web --filter @framezero/studio-bridge dev",
+    "dev:web": "pnpm --filter @framezero/studio-web dev",
+    "dev:bridge": "pnpm --filter @framezero/studio-bridge dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
