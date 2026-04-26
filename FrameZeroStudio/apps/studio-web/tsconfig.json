@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "composite": true,
+    "noEmit": true
+  },
+  "references": [
+    { "path": "../../packages/framezero-schema" },
+    { "path": "../../packages/framezero-compiler" },
+    { "path": "../../packages/framezero-fixtures" }
+  ],
+  "include": ["src", "vite.config.ts"]
+}

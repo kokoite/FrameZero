@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@framezero/schema": ["packages/framezero-schema/src/index.ts"],
+      "@framezero/compiler": ["packages/framezero-compiler/src/index.ts"],
+      "@framezero/fixtures": ["packages/framezero-fixtures/src/index.ts"]
+    }
+  }
+}

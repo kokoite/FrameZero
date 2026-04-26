@@ -3,3 +3,8 @@ DerivedData/
 *.xcuserdata/
 **/.swiftpm/xcode/xcuserdata/
 artifacts/
+.playwright-mcp/
+FrameZeroStudio/**/node_modules/
+FrameZeroStudio/**/dist/
+FrameZeroStudio/**/*.tsbuildinfo
+framezero-studio-phase1-foundation.png

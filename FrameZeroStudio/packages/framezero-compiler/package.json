@@ -1,0 +1,19 @@
+{
+  "name": "@framezero/compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --config ../../vitest.config.ts",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@framezero/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.16"
+  }
+}

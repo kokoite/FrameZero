@@ -1,0 +1,364 @@
+import {
+  type MotionAction,
+  type MotionAssignment,
+  type MotionDocument,
+  type MotionNode,
+  type MotionRule,
+  type MotionSpec,
+  type MotionValue,
+  animatedProperties,
+  parseMotionDocument
+} from "@framezero/schema";
+
+export type StudioProject = {
+  studioVersion: 1;
+  id: string;
+  name: string;
+  rootNodeId: string;
+  nodes: Record<string, StudioNode>;
+  roles: Record<string, StudioRole>;
+  phases: Record<string, StudioPhase>;
+  phaseOrder: string[];
+  triggers: Record<string, StudioTrigger>;
+  components: Record<string, StudioComponent>;
+  editor?: StudioEditorState;
+};
+
+export type StudioNode = {
+  id: string;
+  name: string;
+  kind: MotionNode["kind"];
+  parentId: string | null;
+  childIds: string[];
+  roles: string[];
+  layout: Record<string, MotionValue>;
+  style: Record<string, MotionValue>;
+  presentation: Record<string, MotionValue>;
+  locked?: boolean;
+  hiddenInEditor?: boolean;
+};
+
+export type StudioRole = {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+};
+
+export type StudioComponent = {
+  id: string;
+  name: string;
+  rootNodeId: string;
+  nodeIds: string[];
+};
+
+export type StudioTrigger = {
+  id: string;
+  type: "tap" | "automatic" | "after";
+  selector?: { id?: string; role?: string };
+};
+
+export type StudioPhase = {
+  id: string;
+  name: string;
+  mode: "absolute" | "deltaFromPrevious";
+  startDelay: number;
+  nextMode: "afterPreviousSettles" | "atTime";
+  nextAt: number | null;
+  targets: MotionAssignment[];
+  rules: MotionRule[];
+  arcs: Array<{
+    select: { id?: string; role?: string };
+    x: (typeof animatedProperties)[number];
+    y: (typeof animatedProperties)[number];
+    direction: "clockwise" | "anticlockwise";
+    bend?: number;
+    motion: MotionSpec;
+  }>;
+  jiggles: Array<{
+    select: MotionAssignment["select"];
+    amplitude: MotionValue;
+    duration: number;
+    cycles: number;
+    startDirection: "negative" | "positive" | "clockwise" | "anticlockwise";
+    decay?: number;
+  }>;
+  actions: MotionAction[];
+};
+
+export type StudioEditorState = {
+  selection: string[];
+  viewportPreset: "iphone" | "ipad" | "custom";
+};
+
+export type CompileResult = {
+  document: MotionDocument;
+  json: string;
+};
+
+const settledTriggerId = "settled";
+const timelineTriggerId = "timeline";
+
+export function compileStudioProject(project: StudioProject): CompileResult {
+  validateStudioProject(project);
+
+  const nodes = compileNodes(project);
+  const states = compileStates(project);
+  const transitions = compileTransitions(project);
+
+  const document = parseMotionDocument({
+    schemaVersion: 1,
+    root: project.rootNodeId,
+    nodes,
+    machines: [
+      {
+        id: "main",
+        initial: "state0",
+        states,
+        transitions
+      }
+    ],
+    triggers: compileTriggers(project),
+    dragBindings: [],
+    bodies: [],
+    forces: []
+  });
+
+  return {
+    document,
+    json: stableStringify(document)
+  };
+}
+
+export function stableStringify(value: unknown): string {
+  return `${JSON.stringify(sortForJson(value), null, 2)}\n`;
+}
+
+function compileNodes(project: StudioProject): MotionNode[] {
+  return orderedNodeIds(project).map((nodeId) => {
+    const node = requireNode(project, nodeId);
+    return {
+      id: node.id,
+      kind: node.kind,
+      roles: [...node.roles].sort(),
+      layout: sortRecord(node.layout),
+      style: sortRecord(node.style),
+      presentation: sortRecord(node.presentation),
+      children: [...node.childIds]
+    };
+  });
+}
+
+function compileStates(project: StudioProject): MotionDocument["machines"][number]["states"] {
+  const states: MotionDocument["machines"][number]["states"] = [
+    {
+      id: "state0",
+      values: initialAssignments(project)
+    }
+  ];
+
+  let previousConcrete = concreteStateFromAssignments(project, states[0]?.values ?? []);
+
+  project.phaseOrder.forEach((phaseId, index) => {
+    const phase = requirePhase(project, phaseId);
+    const values = phase.mode === "deltaFromPrevious"
+      ? compileDeltaTargets(project, phase.targets, previousConcrete)
+      : phase.targets;
+
+    states.push({
+      id: `state${index + 1}`,
+      values
+    });
+
+    previousConcrete = {
+      ...previousConcrete,
+      ...concreteStateFromAssignments(project, values)
+    };
+  });
+
+  return states;
+}
+
+function initialAssignments(project: StudioProject): MotionAssignment[] {
+  return orderedNodeIds(project).flatMap((nodeId) => {
+    const node = requireNode(project, nodeId);
+    return Object.entries(node.presentation)
+      .filter(([property]) => isAnimatedProperty(property))
+      .map(([property, value]) => ({
+        select: { id: node.id, properties: [property as (typeof animatedProperties)[number]] },
+        value
+      }));
+  });
+}
+
+function compileDeltaTargets(
+  project: StudioProject,
+  targets: MotionAssignment[],
+  previousConcrete: Record<string, MotionValue>
+): MotionAssignment[] {
+  return targets.map((target) => {
+    const keys = resolveAssignmentKeys(project, target);
+    if (keys.length !== 1) {
+      return target;
+    }
+
+    const key = keys[0];
+    if (key === undefined) {
+      return target;
+    }
+
+    const previousValue = previousConcrete[key];
+    if (typeof previousValue !== "number" || typeof target.value !== "number") {
+      return target;
+    }
+
+    return {
+      ...target,
+      value: previousValue + target.value
+    };
+  });
+}
+
+function compileTransitions(project: StudioProject): MotionDocument["machines"][number]["transitions"] {
+  return project.phaseOrder.map((phaseId, index) => {
+    const phase = requirePhase(project, phaseId);
+    const previousPhase = index > 0 ? requirePhase(project, project.phaseOrder[index - 1] as string) : undefined;
+    const trigger = previousPhase?.nextMode === "afterPreviousSettles" ? settledTriggerId : timelineTriggerId;
+    const delay = index === 0
+      ? phase.startDelay
+      : (previousPhase?.nextMode === "atTime" ? previousPhase.nextAt ?? 0 : 0) + phase.startDelay;
+
+    return {
+      id: `transition${index}`,
+      from: `state${index}`,
+      to: `state${index + 1}`,
+      trigger,
+      delay,
+      rules: phase.rules,
+      arcs: phase.arcs,
+      jiggles: phase.jiggles,
+      enter: [],
+      exit: [],
+      spawns: [],
+      actions: phase.actions
+    };
+  });
+}
+
+function compileTriggers(project: StudioProject): MotionDocument["triggers"] {
+  const authorTriggers = Object.values(project.triggers).sort((a, b) => a.id.localeCompare(b.id));
+  return [
+    { id: timelineTriggerId, type: "after" },
+    { id: settledTriggerId, type: "automatic" },
+    ...authorTriggers
+  ];
+}
+
+function validateStudioProject(project: StudioProject) {
+  if (project.studioVersion !== 1) {
+    throw new Error(`Unsupported Studio project version '${project.studioVersion}'`);
+  }
+
+  if (project.nodes[project.rootNodeId] === undefined) {
+    throw new Error(`Root node '${project.rootNodeId}' does not exist`);
+  }
+
+  for (const phaseId of project.phaseOrder) {
+    if (project.phases[phaseId] === undefined) {
+      throw new Error(`Phase order references missing phase '${phaseId}'`);
+    }
+  }
+
+  for (const node of Object.values(project.nodes)) {
+    if (node.parentId !== null && project.nodes[node.parentId] === undefined) {
+      throw new Error(`Node '${node.id}' references missing parent '${node.parentId}'`);
+    }
+
+    for (const childId of node.childIds) {
+      const child = project.nodes[childId];
+      if (child === undefined) {
+        throw new Error(`Node '${node.id}' references missing child '${childId}'`);
+      }
+
+      if (child.parentId !== node.id) {
+        throw new Error(`Node '${node.id}' child '${childId}' does not point back to parent`);
+      }
+    }
+  }
+}
+
+function orderedNodeIds(project: StudioProject): string[] {
+  const ordered: string[] = [];
+
+  function visit(nodeId: string) {
+    ordered.push(nodeId);
+    for (const childId of requireNode(project, nodeId).childIds) {
+      visit(childId);
+    }
+  }
+
+  visit(project.rootNodeId);
+  return ordered;
+}
+
+function requireNode(project: StudioProject, nodeId: string): StudioNode {
+  const node = project.nodes[nodeId];
+  if (node === undefined) {
+    throw new Error(`Missing node '${nodeId}'`);
+  }
+  return node;
+}
+
+function requirePhase(project: StudioProject, phaseId: string): StudioPhase {
+  const phase = project.phases[phaseId];
+  if (phase === undefined) {
+    throw new Error(`Missing phase '${phaseId}'`);
+  }
+  return phase;
+}
+
+function concreteStateFromAssignments(project: StudioProject, assignments: MotionAssignment[]) {
+  const concrete: Record<string, MotionValue> = {};
+  for (const assignment of assignments) {
+    for (const key of resolveAssignmentKeys(project, assignment)) {
+      concrete[key] = assignment.value;
+    }
+  }
+  return concrete;
+}
+
+function resolveAssignmentKeys(project: StudioProject, assignment: MotionAssignment): string[] {
+  const selector = assignment.select;
+  const nodeIds = selector.id !== undefined
+    ? [selector.id]
+    : Object.values(project.nodes)
+      .filter((node) => selector.role !== undefined && node.roles.includes(selector.role))
+      .map((node) => node.id);
+
+  return nodeIds.flatMap((nodeId: string) => selector.properties.map((property: string) => `${nodeId}.${property}`));
+}
+
+function isAnimatedProperty(property: string): property is (typeof animatedProperties)[number] {
+  return (animatedProperties as readonly string[]).includes(property);
+}
+
+function sortRecord<T>(record: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function sortForJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortForJson);
+  }
+
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortForJson(entry)])
+    );
+  }
+
+  return value;
+}

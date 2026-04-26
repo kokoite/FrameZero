@@ -68,6 +68,8 @@ The next authoring step is FrameZero Studio: a local-first web editor that creat
 
 The Phase 0 contracts live in [`Documentation/Contracts`](Documentation/Contracts/README.md). They define the product workflow, runtime JSON shape, Studio project format, local iOS preview protocol, and multi-agent merge/review process.
 
+The local Studio foundation lives in [`FrameZeroStudio`](FrameZeroStudio/README.md). It currently contains the TypeScript schema mirror, Studio-to-motion JSON compiler, fixtures, and a minimal web shell.
+
 ## Current Support
 
 ### Scene Nodes

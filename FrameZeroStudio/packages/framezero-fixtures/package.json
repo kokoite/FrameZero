@@ -1,0 +1,17 @@
+{
+  "name": "@framezero/fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@framezero/compiler": "workspace:*",
+    "@framezero/schema": "workspace:*"
+  }
+}
