@@ -55,9 +55,116 @@ struct MotionNode: Identifiable, Decodable {
     let roles: [String]
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
+    let fills: [MotionFill]
     let presentation: [String: MotionValue]
     let children: [NodeID]
     let presence: MotionPresence?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case roles
+        case layout
+        case style
+        case fills
+        case presentation
+        case children
+        case presence
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(NodeID.self, forKey: .id)
+        kind = try container.decode(MotionNodeKind.self, forKey: .kind)
+        roles = try container.decodeIfPresent([String].self, forKey: .roles) ?? []
+        layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
+        style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
+        fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        presentation = try container.decodeIfPresent([String: MotionValue].self, forKey: .presentation) ?? [:]
+        children = try container.decodeIfPresent([NodeID].self, forKey: .children) ?? []
+        presence = try container.decodeIfPresent(MotionPresence.self, forKey: .presence)
+    }
+}
+
+struct MotionFill: Decodable, Equatable {
+    let type: MotionFillType
+    let color: String?
+    let colors: [MotionColorStop]
+    let angle: Double?
+    let centerX: Double?
+    let centerY: Double?
+    let radius: Double?
+    let opacity: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case color
+        case colors
+        case angle
+        case centerX
+        case centerY
+        case radius
+        case opacity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(MotionFillType.self, forKey: .type)
+        color = try container.decodeIfPresent(String.self, forKey: .color)
+        colors = try container.decodeIfPresent([MotionColorStop].self, forKey: .colors) ?? []
+        angle = try container.decodeFiniteDoubleIfPresent(forKey: .angle)
+        centerX = try container.decodeFiniteDoubleIfPresent(forKey: .centerX)
+        centerY = try container.decodeFiniteDoubleIfPresent(forKey: .centerY)
+        radius = try container.decodeFinitePositiveDoubleIfPresent(forKey: .radius)
+        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+
+        if let opacity, opacity > 1 {
+            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Fill opacity must be between 0 and 1")
+        }
+
+        switch type {
+        case .solid:
+            if color == nil {
+                throw DecodingError.dataCorruptedError(forKey: .color, in: container, debugDescription: "Solid fill requires color")
+            }
+        case .linearGradient, .radialGradient:
+            if colors.count < 2 {
+                throw DecodingError.dataCorruptedError(forKey: .colors, in: container, debugDescription: "Gradient fill requires at least two color stops")
+            }
+        }
+    }
+}
+
+enum MotionFillType: String, Decodable, Equatable {
+    case solid
+    case linearGradient
+    case radialGradient
+}
+
+struct MotionColorStop: Decodable, Equatable {
+    let color: String
+    let position: Double
+    let opacity: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case color
+        case position
+        case opacity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decode(String.self, forKey: .color)
+        position = try container.decodeFiniteDouble(forKey: .position)
+        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+
+        if position < 0 || position > 1 {
+            throw DecodingError.dataCorruptedError(forKey: .position, in: container, debugDescription: "Color stop position must be between 0 and 1")
+        }
+        if let opacity, opacity > 1 {
+            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Color stop opacity must be between 0 and 1")
+        }
+    }
 }
 
 enum MotionNodeKind: String, Decodable {
@@ -360,6 +467,7 @@ struct MotionParticleSpec: Decodable {
     let kind: MotionNodeKind
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
+    let fills: [MotionFill]
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -369,6 +477,7 @@ struct MotionParticleSpec: Decodable {
         case kind
         case layout
         case style
+        case fills
         case from
         case to
         case motion
@@ -380,6 +489,7 @@ struct MotionParticleSpec: Decodable {
         kind = try container.decode(MotionNodeKind.self, forKey: .kind)
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
+        fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
         to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
         motion = try container.decode(MotionSpec.self, forKey: .motion)
@@ -435,6 +545,7 @@ struct MotionComponentSpec: Decodable {
     let kind: MotionNodeKind
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
+    let fills: [MotionFill]
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -445,6 +556,7 @@ struct MotionComponentSpec: Decodable {
         case kind
         case layout
         case style
+        case fills
         case from
         case to
         case motion
@@ -457,6 +569,7 @@ struct MotionComponentSpec: Decodable {
         kind = try container.decode(MotionNodeKind.self, forKey: .kind)
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
+        fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
         to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
         motion = try container.decode(MotionSpec.self, forKey: .motion)
@@ -767,6 +880,20 @@ private extension KeyedDecodingContainer {
         return value
     }
 
+    func decodeFiniteDoubleIfPresent(forKey key: Key) throws -> Double? {
+        guard let value = try decodeIfPresent(Double.self, forKey: key) else {
+            return nil
+        }
+        if !value.isFinite {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "\(key.stringValue) must be finite"
+            )
+        }
+        return value
+    }
+
     func decodeFiniteNonNegativeDouble(forKey key: Key) throws -> Double {
         let value = try decode(Double.self, forKey: key)
         try validateFiniteNonNegative(value, forKey: key)
@@ -775,6 +902,20 @@ private extension KeyedDecodingContainer {
 
     func decodeFinitePositiveDouble(forKey key: Key) throws -> Double {
         let value = try decode(Double.self, forKey: key)
+        if !value.isFinite || value <= 0 {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "\(key.stringValue) must be finite and positive"
+            )
+        }
+        return value
+    }
+
+    func decodeFinitePositiveDoubleIfPresent(forKey key: Key) throws -> Double? {
+        guard let value = try decodeIfPresent(Double.self, forKey: key) else {
+            return nil
+        }
         if !value.isFinite || value <= 0 {
             throw DecodingError.dataCorruptedError(
                 forKey: key,

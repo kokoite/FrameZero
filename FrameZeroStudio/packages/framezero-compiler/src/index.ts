@@ -2,6 +2,7 @@ import {
   type MotionAction,
   type MotionAssignment,
   type MotionDocument,
+  type MotionFill,
   type MotionNode,
   type MotionRule,
   type MotionSpec,
@@ -33,6 +34,7 @@ export type StudioNode = {
   roles: string[];
   layout: Record<string, MotionValue>;
   style: Record<string, MotionValue>;
+  fills?: MotionFill[];
   presentation: Record<string, MotionValue>;
   locked?: boolean;
   hiddenInEditor?: boolean;
@@ -48,8 +50,14 @@ export type StudioRole = {
 export type StudioComponent = {
   id: string;
   name: string;
-  rootNodeId: string;
-  nodeIds: string[];
+  rootNodeId?: string;
+  nodeIds?: string[];
+  kind?: MotionNode["kind"];
+  roles?: string[];
+  layout?: Record<string, MotionValue>;
+  style?: Record<string, MotionValue>;
+  fills?: MotionFill[];
+  presentation?: Record<string, MotionValue>;
 };
 
 export type StudioTrigger = {
@@ -143,6 +151,7 @@ function compileNodes(project: StudioProject): MotionNode[] {
       roles: [...node.roles].sort(),
       layout: sortRecord(node.layout),
       style: sortRecord(node.style),
+      fills: [...(node.fills ?? [])],
       presentation: sortRecord(node.presentation),
       children: [...node.childIds]
     };

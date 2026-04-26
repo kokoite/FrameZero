@@ -47,6 +47,70 @@ describe("motionDocumentSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts structured solid, linear, and radial fills", () => {
+    const result = safeParseMotionDocument({
+      schemaVersion: 1,
+      root: "screen",
+      nodes: [
+        {
+          id: "screen",
+          kind: "zstack",
+          roles: ["screen"],
+          layout: {},
+          style: {},
+          fills: [{ type: "solid", color: "#0B1020", opacity: 1 }],
+          presentation: {},
+          children: ["card", "orb"]
+        },
+        {
+          id: "card",
+          kind: "roundedRectangle",
+          roles: ["actor"],
+          layout: {},
+          style: {},
+          fills: [{
+            type: "linearGradient",
+            colors: [
+              { color: "#25304A", position: 0 },
+              { color: "#5ED8FF", position: 1 }
+            ],
+            angle: 120,
+            opacity: 0.92
+          }],
+          presentation: {},
+          children: []
+        },
+        {
+          id: "orb",
+          kind: "circle",
+          roles: ["actor"],
+          layout: {},
+          style: {},
+          fills: [{
+            type: "radialGradient",
+            colors: [
+              { color: "#E0F2FE", position: 0 },
+              { color: "#5ED8FF", position: 0.48 },
+              { color: "#B58CFF", position: 1 }
+            ],
+            centerX: 0.35,
+            centerY: 0.28,
+            radius: 88
+          }],
+          presentation: {},
+          children: []
+        }
+      ],
+      machines: [],
+      triggers: [],
+      dragBindings: [],
+      bodies: [],
+      forces: []
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("rejects ambiguous selectors", () => {
     const result = safeParseMotionDocument({
       schemaVersion: 1,

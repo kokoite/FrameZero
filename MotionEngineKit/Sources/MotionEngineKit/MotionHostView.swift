@@ -70,9 +70,12 @@ public struct MotionEffectsOverlay: View {
                 let scaleY = particle.channels["scale.y"]?.current ?? 1
                 let rotation = particle.channels["rotation"]?.current ?? 0
                 let cornerRadius = number(particle.style["cornerRadius"]) ?? 4
-                let color = MotionRenderStyle.color(for: string(particle.style["backgroundColor"])) ?? Color.clear
 
-                particleView(kind: particle.kind, color: color, cornerRadius: cornerRadius)
+                particleView(
+                    kind: particle.kind,
+                    backgroundStyle: MotionRenderStyle.fillStyle(fills: particle.fills, fallbackStyle: particle.style),
+                    cornerRadius: cornerRadius
+                )
                     .frame(width: CGFloat(width), height: CGFloat(height))
                     .opacity(opacity)
                     .scaleEffect(x: scale * scaleX, y: scale * scaleY)
@@ -96,14 +99,13 @@ public struct MotionEffectsOverlay: View {
                 let scaleY = component.channels["scale.y"]?.current ?? 1
                 let rotation = component.channels["rotation"]?.current ?? 0
                 let cornerRadius = number(component.style["cornerRadius"]) ?? 8
-                let backgroundColor = MotionRenderStyle.color(for: string(component.style["backgroundColor"])) ?? Color.clear
                 let foregroundColor = MotionRenderStyle.color(for: string(component.style["foregroundColor"])) ?? Color.white
                 let text = string(component.style["text"]) ?? ""
 
                 componentView(
                     kind: component.kind,
                     text: text,
-                    backgroundColor: backgroundColor,
+                    backgroundStyle: MotionRenderStyle.fillStyle(fills: component.fills, fallbackStyle: component.style),
                     foregroundColor: foregroundColor,
                     cornerRadius: cornerRadius
                 )
@@ -118,14 +120,14 @@ public struct MotionEffectsOverlay: View {
     }
 
     @ViewBuilder
-    private func particleView(kind: MotionNodeKind, color: Color, cornerRadius: Double) -> some View {
+    private func particleView(kind: MotionNodeKind, backgroundStyle: AnyShapeStyle, cornerRadius: Double) -> some View {
         switch kind {
         case .circle:
-            Circle().fill(color)
+            Circle().fill(backgroundStyle)
         case .roundedRectangle:
-            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(color)
+            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
         case .zstack, .vstack, .hstack, .text:
-            Circle().fill(color)
+            Circle().fill(backgroundStyle)
         }
     }
 
@@ -133,20 +135,22 @@ public struct MotionEffectsOverlay: View {
     private func componentView(
         kind: MotionNodeKind,
         text: String,
-        backgroundColor: Color,
+        backgroundStyle: AnyShapeStyle,
         foregroundColor: Color,
         cornerRadius: Double
     ) -> some View {
         switch kind {
         case .circle:
-            Circle().fill(backgroundColor)
+            Circle().fill(backgroundStyle)
         case .roundedRectangle, .zstack, .vstack, .hstack:
-            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundColor)
+            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
         case .text:
             Text(text)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(foregroundColor)
-                .background(backgroundColor)
+                .background {
+                    Rectangle().fill(backgroundStyle)
+                }
         }
     }
 

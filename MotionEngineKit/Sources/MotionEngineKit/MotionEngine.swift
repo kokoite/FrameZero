@@ -112,6 +112,7 @@ struct MotionParticleRuntime: Identifiable {
     let kind: MotionNodeKind
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
+    let fills: [MotionFill]
     var channels: [String: MotionChannel]
     let lifetime: Double
     var elapsed: Double
@@ -122,6 +123,7 @@ struct MotionComponentRuntime: Identifiable {
     let kind: MotionNodeKind
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
+    let fills: [MotionFill]
     var channels: [String: MotionChannel]
     let lifetime: Double
     var elapsed: Double
@@ -1269,8 +1271,9 @@ public final class MotionEngine {
         try validateFiniteNumbers(in: particle.style, context: "particle style for \(context)")
         try validateFiniteNumbers(in: particle.from, context: "particle from values for \(context)")
         try validateFiniteNumbers(in: particle.to, context: "particle to values for \(context)")
+        try validateFills(particle.fills, context: "particle fills for \(context)")
 
-        for key in ["backgroundColor"] where particle.style[key] != nil {
+        for key in ["backgroundColor", "gradientEndColor"] where particle.style[key] != nil {
             guard let value = particle.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
                 throw MotionRuntimeError.validation("Particle style '\(key)' for \(context) must be a 6-digit hex color")
             }
@@ -1293,7 +1296,7 @@ public final class MotionEngine {
         )
         try requireKeys(
             particle.style,
-            areIn: ["backgroundColor", "cornerRadius"],
+            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "cornerRadius"],
             label: "particle style",
             context: context
         )
@@ -1319,6 +1322,10 @@ public final class MotionEngine {
         if let cornerRadius = particle.style["cornerRadius"], cornerRadius.number == nil {
             throw MotionRuntimeError.validation("Particle style 'cornerRadius' for \(context) must be a number")
         }
+
+        if let gradientAngle = particle.style["gradientAngle"], gradientAngle.number == nil {
+            throw MotionRuntimeError.validation("Particle style 'gradientAngle' for \(context) must be a number")
+        }
     }
 
     private func validateComponentSpec(_ component: MotionComponentSpec, context: String) throws {
@@ -1326,8 +1333,9 @@ public final class MotionEngine {
         try validateFiniteNumbers(in: component.style, context: "component style for \(context)")
         try validateFiniteNumbers(in: component.from, context: "component from values for \(context)")
         try validateFiniteNumbers(in: component.to, context: "component to values for \(context)")
+        try validateFills(component.fills, context: "component fills for \(context)")
 
-        for key in ["backgroundColor", "foregroundColor"] where component.style[key] != nil {
+        for key in ["backgroundColor", "foregroundColor", "gradientEndColor"] where component.style[key] != nil {
             guard let value = component.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
                 throw MotionRuntimeError.validation("Component style '\(key)' for \(context) must be a 6-digit hex color")
             }
@@ -1341,7 +1349,7 @@ public final class MotionEngine {
         )
         try requireKeys(
             component.style,
-            areIn: ["backgroundColor", "foregroundColor", "cornerRadius", "text", "font"],
+            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "foregroundColor", "cornerRadius", "text", "font"],
             label: "component style",
             context: context
         )
@@ -1366,6 +1374,10 @@ public final class MotionEngine {
 
         if let cornerRadius = component.style["cornerRadius"], cornerRadius.number == nil {
             throw MotionRuntimeError.validation("Component style 'cornerRadius' for \(context) must be a number")
+        }
+
+        if let gradientAngle = component.style["gradientAngle"], gradientAngle.number == nil {
+            throw MotionRuntimeError.validation("Component style 'gradientAngle' for \(context) must be a number")
         }
 
         guard component.lifetime.isFinite, component.lifetime > 0 else {
@@ -1703,13 +1715,33 @@ public final class MotionEngine {
     }
 
     private func validateNodeStyle(_ node: MotionNode) throws {
-        for key in ["backgroundColor", "foregroundColor"] where node.style[key] != nil {
+        try validateFills(node.fills, context: "fills for node '\(node.id)'")
+
+        for key in ["backgroundColor", "foregroundColor", "gradientEndColor"] where node.style[key] != nil {
             guard let value = node.style[key]?.string else {
                 throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a 6-digit hex color string")
             }
 
             guard MotionRenderStyle.isValidHexColor(value) else {
                 throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a 6-digit hex color")
+            }
+        }
+
+        if let gradientAngle = node.style["gradientAngle"], gradientAngle.number == nil {
+            throw MotionRuntimeError.validation("Style 'gradientAngle' for node '\(node.id)' must be a number")
+        }
+    }
+
+    private func validateFills(_ fills: [MotionFill], context: String) throws {
+        for fill in fills {
+            if let color = fill.color, !MotionRenderStyle.isValidHexColor(color) {
+                throw MotionRuntimeError.validation("Fill color for \(context) must be a 6-digit hex color")
+            }
+
+            for stop in fill.colors {
+                guard MotionRenderStyle.isValidHexColor(stop.color) else {
+                    throw MotionRuntimeError.validation("Fill color stop for \(context) must be a 6-digit hex color")
+                }
             }
         }
     }
@@ -2216,6 +2248,7 @@ public final class MotionEngine {
             kind: particle.kind,
             layout: particle.layout,
             style: particle.style,
+            fills: particle.fills,
             channels: channels,
             lifetime: particle.lifetime,
             elapsed: 0
@@ -2297,6 +2330,7 @@ public final class MotionEngine {
             kind: component.kind,
             layout: component.layout,
             style: component.style,
+            fills: component.fills,
             channels: channels,
             lifetime: component.lifetime,
             elapsed: 0

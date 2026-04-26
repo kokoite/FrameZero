@@ -70,6 +70,100 @@ final class MotionRenderPolicyTests: XCTestCase {
     }
 
     @MainActor
+    func testAcceptsNodeGradientStyle() throws {
+        let json = validDocument(
+            nodes: """
+            [
+              { "id": "root", "kind": "roundedRectangle", "roles": [], "layout": {}, "style": { "backgroundColor": "#38BDF8", "gradientEndColor": "#B58CFF", "gradientAngle": 135 }, "presentation": {}, "children": [] }
+            ]
+            """
+        )
+
+        XCTAssertNoThrow(try MotionEngine().load(jsonString: json))
+    }
+
+    @MainActor
+    func testAcceptsStructuredNodeFills() throws {
+        let engine = MotionEngine()
+        try engine.load(jsonString: validDocument(
+            nodes: """
+            [
+              {
+                "id": "root",
+                "kind": "roundedRectangle",
+                "roles": [],
+                "layout": {},
+                "style": { "cornerRadius": 18 },
+                "fills": [
+                  {
+                    "type": "radialGradient",
+                    "colors": [
+                      { "color": "#E0F2FE", "position": 0 },
+                      { "color": "#38BDF8", "position": 0.52 },
+                      { "color": "#B58CFF", "position": 1 }
+                    ],
+                    "centerX": 0.35,
+                    "centerY": 0.28,
+                    "radius": 90,
+                    "opacity": 0.92
+                  }
+                ],
+                "presentation": {},
+                "children": []
+              }
+            ]
+            """
+        ))
+
+        let node = try XCTUnwrap(engine.node("root"))
+        XCTAssertEqual(node.fills.count, 1)
+        XCTAssertEqual(node.fills[0].type, .radialGradient)
+        XCTAssertEqual(node.fills[0].colors.count, 3)
+    }
+
+    @MainActor
+    func testRejectsInvalidNodeGradientColor() {
+        assertInvalidDocument(
+            nodes: """
+            [
+              { "id": "root", "kind": "roundedRectangle", "roles": [], "layout": {}, "style": { "backgroundColor": "#38BDF8", "gradientEndColor": "purple" }, "presentation": {}, "children": [] }
+            ]
+            """,
+            contains: "gradientEndColor"
+        )
+    }
+
+    @MainActor
+    func testRejectsInvalidStructuredFillColor() {
+        assertInvalidDocument(
+            nodes: """
+            [
+              {
+                "id": "root",
+                "kind": "roundedRectangle",
+                "roles": [],
+                "layout": {},
+                "style": {},
+                "fills": [
+                  {
+                    "type": "linearGradient",
+                    "colors": [
+                      { "color": "#38BDF8", "position": 0 },
+                      { "color": "purple", "position": 1 }
+                    ],
+                    "angle": 135
+                  }
+                ],
+                "presentation": {},
+                "children": []
+              }
+            ]
+            """,
+            contains: "Fill color stop"
+        )
+    }
+
+    @MainActor
     func testRejectsInvalidTrailColors() {
         let json = validDocument(
             nodes: """

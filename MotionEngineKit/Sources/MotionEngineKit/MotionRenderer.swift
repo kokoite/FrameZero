@@ -92,14 +92,14 @@ public struct MotionRuntimeView: View {
         case .circle:
             return AnyView(applyCommonModifiers(
                 Circle()
-                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .clear),
+                    .fill(MotionRenderStyle.fillStyle(fills: node.fills, fallbackStyle: node.style)),
                 node: node,
                 drawsBackground: false
             ))
         case .roundedRectangle:
             return AnyView(applyCommonModifiers(
                 RoundedRectangle(cornerRadius: engine.styleNumber(for: node, "cornerRadius") ?? 12)
-                    .fill(color(for: engine.styleString(for: node, "backgroundColor")) ?? .clear),
+                    .fill(MotionRenderStyle.fillStyle(fills: node.fills, fallbackStyle: node.style)),
                 node: node,
                 drawsBackground: false
             ))
@@ -124,7 +124,7 @@ public struct MotionRuntimeView: View {
         let opacity = MotionRenderStyle.visibleOpacity(engine.number(for: node.id, property: "opacity", default: 1))
         let padding = engine.layoutNumber(for: node, "padding") ?? 0
         let cornerRadius = engine.styleNumber(for: node, "cornerRadius") ?? 0
-        let backgroundColor = color(for: engine.styleString(for: node, "backgroundColor"))
+        let hasBackground = engine.styleString(for: node, "backgroundColor") != nil || !node.fills.isEmpty
         let fillsScreen = node.roles.contains("screen")
         let isTapTarget = engine.hasTapTrigger(on: node.id)
         let isDragTarget = engine.hasDragBinding(on: node.id)
@@ -138,9 +138,9 @@ public struct MotionRuntimeView: View {
                 maxHeight: fillsScreen ? .infinity : nil
             )
             .background {
-                if drawsBackground, let backgroundColor {
+                if drawsBackground, hasBackground {
                     RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(backgroundColor)
+                        .fill(MotionRenderStyle.fillStyle(fills: node.fills, fallbackStyle: node.style))
                 }
             }
             .contentShape(Rectangle())

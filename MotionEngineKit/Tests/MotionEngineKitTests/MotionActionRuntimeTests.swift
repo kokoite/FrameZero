@@ -58,7 +58,17 @@ final class MotionActionRuntimeTests: XCTestCase {
                 "id": "leftSpark",
                 "kind": "circle",
                 "layout": { "width": 12, "height": 12 },
-                "style": { "backgroundColor": "#38BDF8" },
+                "style": { "backgroundColor": "#38BDF8", "gradientEndColor": "#B58CFF", "gradientAngle": 135 },
+                "fills": [
+                  {
+                    "type": "linearGradient",
+                    "colors": [
+                      { "color": "#38BDF8", "position": 0 },
+                      { "color": "#B58CFF", "position": 1 }
+                    ],
+                    "angle": 135
+                  }
+                ],
                 "from": { "offset.x": -8, "offset.y": 0, "scale": 0.6, "opacity": 1 },
                 "to": { "offset.x": -48, "offset.y": -30, "scale": 1.2, "opacity": 0 },
                 "motion": { "type": "timed", "duration": 0.3, "easing": "easeOut" },
@@ -85,6 +95,9 @@ final class MotionActionRuntimeTests: XCTestCase {
         XCTAssertEqual(components.count, 2)
         XCTAssertTrue(components[0].id.contains("twinComponents-leftSpark"))
         XCTAssertTrue(components[1].id.contains("twinComponents-score"))
+        XCTAssertEqual(components[0].style["gradientEndColor"]?.string, "#B58CFF")
+        XCTAssertEqual(components[0].fills.count, 1)
+        XCTAssertEqual(components[0].fills[0].type, .linearGradient)
         XCTAssertEqual(components[1].style["text"]?.string, "+10")
 
         engine.advanceForTesting(seconds: 0.35)

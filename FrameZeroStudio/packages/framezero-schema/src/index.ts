@@ -46,6 +46,32 @@ export const finiteNumberSchema = z.number().finite();
 export const nonNegativeNumberSchema = finiteNumberSchema.min(0);
 export const positiveNumberSchema = finiteNumberSchema.positive();
 export const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Expected #RRGGBB");
+export const fillColorStopSchema = z.object({
+  color: hexColorSchema,
+  position: finiteNumberSchema.min(0).max(1),
+  opacity: finiteNumberSchema.min(0).max(1).optional()
+});
+export const fillSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("solid"),
+    color: hexColorSchema,
+    opacity: finiteNumberSchema.min(0).max(1).optional()
+  }),
+  z.object({
+    type: z.literal("linearGradient"),
+    colors: z.array(fillColorStopSchema).min(2),
+    angle: finiteNumberSchema.optional(),
+    opacity: finiteNumberSchema.min(0).max(1).optional()
+  }),
+  z.object({
+    type: z.literal("radialGradient"),
+    colors: z.array(fillColorStopSchema).min(2),
+    centerX: finiteNumberSchema.min(0).max(1).optional(),
+    centerY: finiteNumberSchema.min(0).max(1).optional(),
+    radius: positiveNumberSchema.optional(),
+    opacity: finiteNumberSchema.min(0).max(1).optional()
+  })
+]);
 
 export const metricValueSchema = z.object({
   metric: metricSchema,
@@ -68,6 +94,7 @@ export const motionNodeSchema = z.object({
   roles: z.array(z.string().min(1)).default([]),
   layout: motionValueRecordSchema.default({}),
   style: motionValueRecordSchema.default({}),
+  fills: z.array(fillSchema).default([]),
   presentation: motionValueRecordSchema.default({}),
   children: z.array(z.string().min(1)).default([]),
   presence: z
@@ -186,6 +213,7 @@ export const motionActionSchema: z.ZodType<MotionAction> = z.lazy(() =>
         kind: nodeKindSchema,
         layout: motionValueRecordSchema.default({}),
         style: motionValueRecordSchema.default({}),
+        fills: z.array(fillSchema).default([]),
         from: motionValueRecordSchema.default({}),
         to: motionValueRecordSchema.default({}),
         motion: motionSpecSchema,
@@ -203,6 +231,7 @@ export const motionActionSchema: z.ZodType<MotionAction> = z.lazy(() =>
             kind: nodeKindSchema,
             layout: motionValueRecordSchema.default({}),
             style: motionValueRecordSchema.default({}),
+            fills: z.array(fillSchema).default([]),
             from: motionValueRecordSchema.default({}),
             to: motionValueRecordSchema.default({}),
             motion: motionSpecSchema,
@@ -321,6 +350,7 @@ export const motionDocumentSchema = z
 export type MotionDocument = z.infer<typeof motionDocumentSchema>;
 export type MotionNode = z.infer<typeof motionNodeSchema>;
 export type MotionValue = z.infer<typeof motionValueSchema>;
+export type MotionFill = z.infer<typeof fillSchema>;
 export type MotionSpec = z.infer<typeof motionSpecSchema>;
 export type MotionPropertySelector = z.infer<typeof propertySelectorSchema>;
 export type MotionNodeSelector = z.infer<typeof nodeSelectorSchema>;

@@ -28,6 +28,24 @@ describe("compileStudioProject", () => {
     });
   });
 
+  it("preserves structured fills on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.fills = [{
+      type: "linearGradient",
+      colors: [
+        { color: "#25304A", position: 0 },
+        { color: "#5ED8FF", position: 1 }
+      ],
+      angle: 120,
+      opacity: 0.92
+    }];
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.fills).toEqual(project.nodes.card.fills);
+  });
+
   it("produces deterministic JSON", () => {
     const first = compileStudioProject(parallelComponentsProject).json;
     const second = compileStudioProject(parallelComponentsProject).json;
