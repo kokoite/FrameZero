@@ -10,6 +10,8 @@ enum MotionActionLimits {
     static let maxParticlesPerEmission = 128
     static let maxParticleSelectorMatches = 16
     static let maxActiveParticles = 512
+    static let maxComponentsPerSpawn = 32
+    static let maxActiveComponents = 256
 }
 
 struct MotionDocument: Decodable {
@@ -138,6 +140,7 @@ indirect enum MotionAction: Decodable {
     case haptic(MotionHapticAction)
     case screenShake(MotionScreenShakeAction)
     case emitParticles(MotionEmitParticlesAction)
+    case spawnComponents(MotionSpawnComponentsAction)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -160,6 +163,8 @@ indirect enum MotionAction: Decodable {
             self = .screenShake(try MotionScreenShakeAction(from: decoder))
         case .emitParticles:
             self = .emitParticles(try MotionEmitParticlesAction(from: decoder))
+        case .spawnComponents:
+            self = .spawnComponents(try MotionSpawnComponentsAction(from: decoder))
         }
     }
 }
@@ -171,6 +176,7 @@ enum MotionActionType: String, Decodable {
     case haptic
     case screenShake
     case emitParticles
+    case spawnComponents
 }
 
 struct MotionActionGroup: Decodable {
@@ -378,6 +384,91 @@ struct MotionParticleSpec: Decodable {
         to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
         motion = try container.decode(MotionSpec.self, forKey: .motion)
         lifetime = try container.decodeFinitePositiveDouble(forKey: .lifetime)
+    }
+}
+
+struct MotionSpawnComponentsAction: Decodable {
+    let id: String
+    let selector: MotionNodeSelector?
+    let components: [MotionComponentSpec]
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case selector
+        case components
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        selector = try container.decodeIfPresent(MotionNodeSelector.self, forKey: .selector)
+        components = try container.decode([MotionComponentSpec].self, forKey: .components)
+
+        if id.isEmpty {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "Component spawn id must not be empty"
+            )
+        }
+
+        if components.isEmpty {
+            throw DecodingError.dataCorruptedError(
+                forKey: .components,
+                in: container,
+                debugDescription: "Component spawn must contain at least one component"
+            )
+        }
+
+        if components.count > MotionActionLimits.maxComponentsPerSpawn {
+            throw DecodingError.dataCorruptedError(
+                forKey: .components,
+                in: container,
+                debugDescription: "Component spawn must contain <= \(MotionActionLimits.maxComponentsPerSpawn) components"
+            )
+        }
+    }
+}
+
+struct MotionComponentSpec: Decodable {
+    let id: String
+    let kind: MotionNodeKind
+    let layout: [String: MotionValue]
+    let style: [String: MotionValue]
+    let from: [String: MotionValue]
+    let to: [String: MotionValue]
+    let motion: MotionSpec
+    let lifetime: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case layout
+        case style
+        case from
+        case to
+        case motion
+        case lifetime
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(MotionNodeKind.self, forKey: .kind)
+        layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
+        style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
+        from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
+        to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
+        motion = try container.decode(MotionSpec.self, forKey: .motion)
+        lifetime = try container.decodeFinitePositiveDouble(forKey: .lifetime)
+
+        if id.isEmpty {
+            throw DecodingError.dataCorruptedError(
+                forKey: .id,
+                in: container,
+                debugDescription: "Spawned component id must not be empty"
+            )
+        }
     }
 }
 

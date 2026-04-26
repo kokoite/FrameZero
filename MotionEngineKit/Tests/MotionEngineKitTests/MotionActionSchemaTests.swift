@@ -33,11 +33,38 @@ final class MotionActionSchemaTests: XCTestCase {
                 }
               }
             ]
+          },
+          {
+            "type": "spawnComponents",
+            "id": "twinPop",
+            "selector": { "id": "card" },
+            "components": [
+              {
+                "id": "leftDot",
+                "kind": "circle",
+                "layout": { "width": 12, "height": 12 },
+                "style": { "backgroundColor": "#38BDF8" },
+                "from": { "offset.x": -8, "opacity": 1 },
+                "to": { "offset.x": -48, "opacity": 0 },
+                "motion": { "type": "timed", "duration": 0.4, "easing": "easeOut" },
+                "lifetime": 0.4
+              },
+              {
+                "id": "rightLabel",
+                "kind": "text",
+                "layout": { "width": 80, "height": 28 },
+                "style": { "text": "+10", "foregroundColor": "#FFFFFF" },
+                "from": { "offset.x": 8, "offset.y": 0, "opacity": 1 },
+                "to": { "offset.x": 48, "offset.y": -30, "opacity": 0 },
+                "motion": { "type": "timed", "duration": 0.4, "easing": "easeOut" },
+                "lifetime": 0.4
+              }
+            ]
           }
         ]
         """)
 
-        XCTAssertEqual(actions.count, 2)
+        XCTAssertEqual(actions.count, 3)
 
         guard case let .sequence(sequence) = actions[0] else {
             return XCTFail("Expected first action to decode as sequence")
@@ -76,6 +103,14 @@ final class MotionActionSchemaTests: XCTestCase {
         XCTAssertEqual(emitParticles.count, 12)
         XCTAssertEqual(emitParticles.duration, 0.35)
         XCTAssertEqual(emitParticles.particle.lifetime, 0.35)
+
+        guard case let .spawnComponents(spawnComponents) = actions[2] else {
+            return XCTFail("Expected third action to decode as spawnComponents")
+        }
+        XCTAssertEqual(spawnComponents.id, "twinPop")
+        XCTAssertEqual(spawnComponents.selector?.id, "card")
+        XCTAssertEqual(spawnComponents.components.map(\.id), ["leftDot", "rightLabel"])
+        XCTAssertEqual(spawnComponents.components[1].kind, .text)
     }
 
     func testTransitionActionsDefaultToEmpty() throws {
@@ -154,6 +189,14 @@ final class MotionActionSchemaTests: XCTestCase {
               "lifetime": 0.2
             }
           }
+        ]
+        """)
+    }
+
+    func testRejectsComponentSpawnWithoutComponents() {
+        assertInvalidActions("""
+        [
+          { "type": "spawnComponents", "id": "empty", "components": [] }
         ]
         """)
     }

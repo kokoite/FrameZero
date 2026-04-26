@@ -45,6 +45,54 @@ final class MotionActionRuntimeTests: XCTestCase {
     }
 
     @MainActor
+    func testTapTransitionSpawnsDistinctComponents() throws {
+        let engine = MotionEngine()
+        try engine.load(jsonString: actionDocument(actions: """
+        [
+          {
+            "type": "spawnComponents",
+            "id": "twinComponents",
+            "selector": { "id": "orb" },
+            "components": [
+              {
+                "id": "leftSpark",
+                "kind": "circle",
+                "layout": { "width": 12, "height": 12 },
+                "style": { "backgroundColor": "#38BDF8" },
+                "from": { "offset.x": -8, "offset.y": 0, "scale": 0.6, "opacity": 1 },
+                "to": { "offset.x": -48, "offset.y": -30, "scale": 1.2, "opacity": 0 },
+                "motion": { "type": "timed", "duration": 0.3, "easing": "easeOut" },
+                "lifetime": 0.3
+              },
+              {
+                "id": "score",
+                "kind": "text",
+                "layout": { "width": 70, "height": 28 },
+                "style": { "text": "+10", "foregroundColor": "#FFFFFF" },
+                "from": { "offset.x": 8, "offset.y": 0, "opacity": 1 },
+                "to": { "offset.x": 54, "offset.y": -48, "opacity": 0 },
+                "motion": { "type": "timed", "duration": 0.3, "easing": "easeOut" },
+                "lifetime": 0.3
+              }
+            ]
+          }
+        ]
+        """))
+
+        engine.handleTap(on: "orb")
+
+        let components = engine.components()
+        XCTAssertEqual(components.count, 2)
+        XCTAssertTrue(components[0].id.contains("twinComponents-leftSpark"))
+        XCTAssertTrue(components[1].id.contains("twinComponents-score"))
+        XCTAssertEqual(components[1].style["text"]?.string, "+10")
+
+        engine.advanceForTesting(seconds: 0.35)
+
+        XCTAssertTrue(engine.components().isEmpty)
+    }
+
+    @MainActor
     func testSequenceDelayDefersParticleEmission() throws {
         let engine = MotionEngine()
         try engine.load(jsonString: actionDocument(actions: """
@@ -145,6 +193,32 @@ final class MotionActionRuntimeTests: XCTestCase {
               "motion": { "type": "timed", "duration": 0.2, "easing": "linear" },
               "lifetime": 0.2
             }
+          }
+        ]
+        """)))
+    }
+
+    @MainActor
+    func testRejectsUnsupportedComponentProperties() {
+        let engine = MotionEngine()
+
+        XCTAssertThrowsError(try engine.load(jsonString: actionDocument(actions: """
+        [
+          {
+            "type": "spawnComponents",
+            "id": "badComponents",
+            "components": [
+              {
+                "id": "bad",
+                "kind": "circle",
+                "layout": { "width": 4, "height": 4 },
+                "style": { "backgroundColor": "#FFFFFF" },
+                "from": { "blur": 10, "opacity": 1 },
+                "to": { "opacity": 0 },
+                "motion": { "type": "timed", "duration": 0.2, "easing": "linear" },
+                "lifetime": 0.2
+              }
+            ]
           }
         ]
         """)))

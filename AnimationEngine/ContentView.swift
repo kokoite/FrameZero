@@ -408,6 +408,11 @@ struct ContentView: View {
                     particleControls
                 }
 
+                ToggleRow(title: "Components", isOn: $clip.componentsEnabled)
+                if clip.componentsEnabled {
+                    componentControls
+                }
+
                 ToggleRow(title: "Screen Shake", isOn: $clip.screenShakeEnabled)
                 if clip.screenShakeEnabled {
                     VStack(spacing: 9) {
@@ -430,6 +435,24 @@ struct ContentView: View {
                     .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                 }
             }
+        }
+    }
+
+    private var componentControls: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 4) {
+                ForEach(ParticleColorChoice.allCases) { color in
+                    SegmentPill(title: color.title, isSelected: clip.componentColor == color, color: color.color) {
+                        clip.componentColor = color
+                    }
+                }
+            }
+            .padding(4)
+            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+
+            ControlSlider(title: "Comp Size", value: $clip.componentSize, range: 8...96, suffix: "pt")
+            ControlSlider(title: "Comp Spread", value: $clip.componentSpread, range: 16...280, suffix: "pt")
+            ControlSlider(title: "Comp Life", value: $clip.componentLifetime, range: 0.1...4.0, suffix: "s")
         }
     }
 
@@ -1090,6 +1113,11 @@ private struct MotionClip: Identifiable, Equatable {
     var particleDistanceMin = 24.0
     var particleDistanceMax = 120.0
     var particleEndScale = 0.12
+    var componentsEnabled = false
+    var componentColor = ParticleColorChoice.blue
+    var componentSize = 34.0
+    var componentSpread = 88.0
+    var componentLifetime = 0.72
     var screenShakeEnabled = false
     var shakeAmplitude = 5.0
     var shakeDuration = 0.2
@@ -1249,6 +1277,33 @@ private struct MotionClip: Identifiable, Equatable {
         return clip
     }()
 
+    static let twinComponentsPhase: MotionClip = {
+        var clip = MotionClip(
+            id: UUID(),
+            name: "Twin Components",
+            motionKind: .move,
+            arcDirection: .clockwise,
+            arcBend: 0.56,
+            x: 0,
+            y: 0,
+            rotation: 0,
+            scale: 1,
+            opacity: 1,
+            phaseDuration: 0.72,
+            usesTimedNext: false,
+            startDelay: 0,
+            motionBehavior: .easeOut,
+            response: 0.72,
+            damping: 0.7
+        )
+        clip.componentsEnabled = true
+        clip.componentColor = .blue
+        clip.componentSize = 38
+        clip.componentSpread = 96
+        clip.componentLifetime = 0.72
+        return clip
+    }()
+
     static let samples = [
         demo,
         wideArcPhase,
@@ -1256,6 +1311,7 @@ private struct MotionClip: Identifiable, Equatable {
         particleBurstPhase,
         screenShakePhase,
         hapticPulsePhase,
+        twinComponentsPhase,
         MotionClip(
             id: UUID(),
             name: "Tiny Panic",
@@ -1907,6 +1963,76 @@ private enum MotionDocumentFactory {
                 "motion": { "type": "timed", "duration": \(n(lifetime)), "easing": "easeOut" },
                 "lifetime": \(n(lifetime))
               }
+            }
+            """)
+        }
+
+        if clip.componentsEnabled {
+            let size = max(clip.componentSize, 1)
+            let spread = max(clip.componentSpread, 1)
+            let lifetime = max(clip.componentLifetime, 0.1)
+            let pillWidth = max(size * 2.4, 54)
+            let pillHeight = max(size * 0.86, 24)
+
+            actions.append("""
+            {
+              "type": "spawnComponents",
+              "id": "phase\(index)Components",
+              "selector": { "id": "orb" },
+              "components": [
+                {
+                  "id": "leftOrb",
+                  "kind": "circle",
+                  "layout": {
+                    "width": \(n(size)),
+                    "height": \(n(size))
+                  },
+                  "style": {
+                    "backgroundColor": "\(clip.componentColor.hex)"
+                  },
+                  "from": {
+                    "offset.x": 0,
+                    "offset.y": 0,
+                    "scale": 0.62,
+                    "opacity": 1
+                  },
+                  "to": {
+                    "offset.x": \(n(-spread)),
+                    "offset.y": \(n(-spread * 0.38)),
+                    "scale": 1.22,
+                    "opacity": 0
+                  },
+                  "motion": { "type": "timed", "duration": \(n(lifetime)), "easing": "easeOut" },
+                  "lifetime": \(n(lifetime))
+                },
+                {
+                  "id": "scoreTag",
+                  "kind": "text",
+                  "layout": {
+                    "width": \(n(pillWidth)),
+                    "height": \(n(pillHeight))
+                  },
+                  "style": {
+                    "text": "+10",
+                    "foregroundColor": "#FFFFFF",
+                    "backgroundColor": "\(clip.componentColor.hex)"
+                  },
+                  "from": {
+                    "offset.x": 0,
+                    "offset.y": 0,
+                    "scale": 0.72,
+                    "opacity": 1
+                  },
+                  "to": {
+                    "offset.x": \(n(spread)),
+                    "offset.y": \(n(-spread * 0.55)),
+                    "scale": 1,
+                    "opacity": 0
+                  },
+                  "motion": { "type": "timed", "duration": \(n(lifetime)), "easing": "easeOut" },
+                  "lifetime": \(n(lifetime))
+                }
+              ]
             }
             """)
         }

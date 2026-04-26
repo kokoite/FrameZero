@@ -17,6 +17,7 @@ public struct MotionEffectsOverlay: View {
                 renderSlingshotGlow(in: proxy.size)
                 renderTrajectoryPoints(in: proxy.size)
                 renderParticles(in: proxy.size)
+                renderComponents(in: proxy.size)
             }
             .allowsHitTesting(false)
         }
@@ -81,6 +82,41 @@ public struct MotionEffectsOverlay: View {
         }
     }
 
+    private func renderComponents(in size: CGSize) -> some View {
+        ZStack {
+            ForEach(engine.components()) { component in
+                let width = number(component.layout["width"]).map { CGFloat($0) }
+                let height = (number(component.layout["height"]) ?? number(component.layout["width"])).map { CGFloat($0) }
+                let padding = number(component.layout["padding"]) ?? 0
+                let x = component.channels["offset.x"]?.current ?? 0
+                let y = component.channels["offset.y"]?.current ?? 0
+                let opacity = MotionRenderStyle.visibleOpacity(component.channels["opacity"]?.current ?? 1)
+                let scale = component.channels["scale"]?.current ?? 1
+                let scaleX = component.channels["scale.x"]?.current ?? 1
+                let scaleY = component.channels["scale.y"]?.current ?? 1
+                let rotation = component.channels["rotation"]?.current ?? 0
+                let cornerRadius = number(component.style["cornerRadius"]) ?? 8
+                let backgroundColor = MotionRenderStyle.color(for: string(component.style["backgroundColor"])) ?? Color.clear
+                let foregroundColor = MotionRenderStyle.color(for: string(component.style["foregroundColor"])) ?? Color.white
+                let text = string(component.style["text"]) ?? ""
+
+                componentView(
+                    kind: component.kind,
+                    text: text,
+                    backgroundColor: backgroundColor,
+                    foregroundColor: foregroundColor,
+                    cornerRadius: cornerRadius
+                )
+                .padding(CGFloat(padding))
+                .frame(width: width, height: height)
+                .opacity(opacity)
+                .scaleEffect(x: scale * scaleX, y: scale * scaleY)
+                .rotationEffect(.degrees(rotation))
+                .position(point(x: x, y: y, in: size))
+            }
+        }
+    }
+
     @ViewBuilder
     private func particleView(kind: MotionNodeKind, color: Color, cornerRadius: Double) -> some View {
         switch kind {
@@ -90,6 +126,27 @@ public struct MotionEffectsOverlay: View {
             RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(color)
         case .zstack, .vstack, .hstack, .text:
             Circle().fill(color)
+        }
+    }
+
+    @ViewBuilder
+    private func componentView(
+        kind: MotionNodeKind,
+        text: String,
+        backgroundColor: Color,
+        foregroundColor: Color,
+        cornerRadius: Double
+    ) -> some View {
+        switch kind {
+        case .circle:
+            Circle().fill(backgroundColor)
+        case .roundedRectangle, .zstack, .vstack, .hstack:
+            RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundColor)
+        case .text:
+            Text(text)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(foregroundColor)
+                .background(backgroundColor)
         }
     }
 

@@ -117,6 +117,16 @@ struct MotionParticleRuntime: Identifiable {
     var elapsed: Double
 }
 
+struct MotionComponentRuntime: Identifiable {
+    let id: String
+    let kind: MotionNodeKind
+    let layout: [String: MotionValue]
+    let style: [String: MotionValue]
+    var channels: [String: MotionChannel]
+    let lifetime: Double
+    var elapsed: Double
+}
+
 private struct ActiveSlingshotDrag {
     let nodeID: NodeID
     let binding: MotionDragBinding
@@ -237,6 +247,7 @@ private struct EngineSnapshot {
     let scheduledActions: [ScheduledMotionAction]
     let activeScreenShakes: [MotionScreenShakeRuntime]
     let activeParticles: [MotionParticleRuntime]
+    let activeComponents: [MotionComponentRuntime]
     let activeSlingshotDrags: [NodeID: ActiveSlingshotDrag]
     let activeProjectiles: [NodeID: ActiveProjectile]
     let activeGlobalDragNodeID: NodeID?
@@ -278,6 +289,7 @@ public final class MotionEngine {
     private var scheduledActions: [ScheduledMotionAction] = []
     private var activeScreenShakes: [MotionScreenShakeRuntime] = []
     private var activeParticles: [MotionParticleRuntime] = []
+    private var activeComponents: [MotionComponentRuntime] = []
     private var activeSlingshotDrags: [NodeID: ActiveSlingshotDrag] = [:]
     private var activeProjectiles: [NodeID: ActiveProjectile] = [:]
     private var activeGlobalDragNodeID: NodeID?
@@ -658,6 +670,10 @@ public final class MotionEngine {
         activeParticles
     }
 
+    func components() -> [MotionComponentRuntime] {
+        activeComponents
+    }
+
     private func tapTriggers(for nodeID: NodeID) -> [MotionTrigger] {
         var currentID: NodeID? = nodeID
 
@@ -963,6 +979,7 @@ public final class MotionEngine {
             scheduledActions: scheduledActions,
             activeScreenShakes: activeScreenShakes,
             activeParticles: activeParticles,
+            activeComponents: activeComponents,
             activeSlingshotDrags: activeSlingshotDrags,
             activeProjectiles: activeProjectiles,
             activeGlobalDragNodeID: activeGlobalDragNodeID,
@@ -998,6 +1015,7 @@ public final class MotionEngine {
         scheduledActions = snapshot.scheduledActions
         activeScreenShakes = snapshot.activeScreenShakes
         activeParticles = snapshot.activeParticles
+        activeComponents = snapshot.activeComponents
         activeSlingshotDrags = snapshot.activeSlingshotDrags
         activeProjectiles = snapshot.activeProjectiles
         activeGlobalDragNodeID = snapshot.activeGlobalDragNodeID
@@ -1096,6 +1114,7 @@ public final class MotionEngine {
         scheduledActions = []
         activeScreenShakes = []
         activeParticles = []
+        activeComponents = []
         activeSlingshotDrags = [:]
         activeProjectiles = [:]
         activeGlobalDragNodeID = nil
@@ -1228,6 +1247,20 @@ public final class MotionEngine {
                 throw MotionRuntimeError.validation("Particle action '\(emission.id)' duration must be finite and non-negative in \(context)")
             }
             try validateParticleSpec(emission.particle, context: "particle action '\(emission.id)' in \(context)")
+        case let .spawnComponents(spawn):
+            if let selector = spawn.selector {
+                try validateNodeSelector(selector, context: "component action '\(spawn.id)' in \(context)")
+                let matchCount = try resolveNodeIDs(selector).count
+                guard matchCount <= MotionActionLimits.maxParticleSelectorMatches else {
+                    throw MotionRuntimeError.validation("Component action '\(spawn.id)' selector matches \(matchCount) nodes; max is \(MotionActionLimits.maxParticleSelectorMatches) in \(context)")
+                }
+            }
+            guard spawn.components.count <= MotionActionLimits.maxComponentsPerSpawn else {
+                throw MotionRuntimeError.validation("Component action '\(spawn.id)' must contain <= \(MotionActionLimits.maxComponentsPerSpawn) components in \(context)")
+            }
+            for component in spawn.components {
+                try validateComponentSpec(component, context: "component '\(component.id)' in action '\(spawn.id)' in \(context)")
+            }
         }
     }
 
@@ -1286,6 +1319,59 @@ public final class MotionEngine {
         if let cornerRadius = particle.style["cornerRadius"], cornerRadius.number == nil {
             throw MotionRuntimeError.validation("Particle style 'cornerRadius' for \(context) must be a number")
         }
+    }
+
+    private func validateComponentSpec(_ component: MotionComponentSpec, context: String) throws {
+        try validateFiniteNumbers(in: component.layout, context: "component layout for \(context)")
+        try validateFiniteNumbers(in: component.style, context: "component style for \(context)")
+        try validateFiniteNumbers(in: component.from, context: "component from values for \(context)")
+        try validateFiniteNumbers(in: component.to, context: "component to values for \(context)")
+
+        for key in ["backgroundColor", "foregroundColor"] where component.style[key] != nil {
+            guard let value = component.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
+                throw MotionRuntimeError.validation("Component style '\(key)' for \(context) must be a 6-digit hex color")
+            }
+        }
+
+        try requireKeys(
+            component.layout,
+            areIn: ["width", "height", "padding"],
+            label: "component layout",
+            context: context
+        )
+        try requireKeys(
+            component.style,
+            areIn: ["backgroundColor", "foregroundColor", "cornerRadius", "text", "font"],
+            label: "component style",
+            context: context
+        )
+        try requireKeys(
+            component.from,
+            areIn: ["offset.x", "offset.y", "scale", "scale.x", "scale.y", "rotation", "opacity"],
+            label: "component from",
+            context: context
+        )
+        try requireKeys(
+            component.to,
+            areIn: ["offset.x", "offset.y", "scale", "scale.x", "scale.y", "rotation", "opacity"],
+            label: "component to",
+            context: context
+        )
+
+        for key in ["width", "height", "padding"] where component.layout[key] != nil {
+            guard component.layout[key]?.number != nil else {
+                throw MotionRuntimeError.validation("Component layout '\(key)' for \(context) must be a number")
+            }
+        }
+
+        if let cornerRadius = component.style["cornerRadius"], cornerRadius.number == nil {
+            throw MotionRuntimeError.validation("Component style 'cornerRadius' for \(context) must be a number")
+        }
+
+        guard component.lifetime.isFinite, component.lifetime > 0 else {
+            throw MotionRuntimeError.validation("Component lifetime must be positive and finite in \(context)")
+        }
+        try validateMotion(component.motion, context: context)
     }
 
     private func requireKeys(
@@ -1993,7 +2079,7 @@ public final class MotionEngine {
         case let .delay(delayAction):
             guard delayAction.duration > 0 else { return }
             scheduledActions.append(ScheduledMotionAction(machineID: machineID, action: action, remainingDelay: delay + delayAction.duration))
-        case .haptic, .screenShake, .emitParticles:
+        case .haptic, .screenShake, .emitParticles, .spawnComponents:
             scheduledActions.append(ScheduledMotionAction(machineID: machineID, action: action, remainingDelay: delay))
         }
     }
@@ -2012,6 +2098,8 @@ public final class MotionEngine {
             return shake.duration
         case let .emitParticles(emission):
             return emission.duration ?? emission.particle.lifetime
+        case let .spawnComponents(spawn):
+            return spawn.components.map(\.lifetime).max() ?? 0
         }
     }
 
@@ -2040,6 +2128,8 @@ public final class MotionEngine {
             ))
         case let .emitParticles(emission):
             spawnParticles(from: emission)
+        case let .spawnComponents(spawn):
+            spawnComponents(from: spawn)
         }
     }
 
@@ -2136,6 +2226,87 @@ public final class MotionEngine {
         switch property {
         case "scale":
             return target ? 0.2 : 1
+        case "opacity":
+            return target ? 0 : 1
+        default:
+            return 0
+        }
+    }
+
+    private func spawnComponents(from spawn: MotionSpawnComponentsAction) {
+        let originNodeIDs: [NodeID]
+        if let selector = spawn.selector, let resolved = try? resolveNodeIDs(selector) {
+            originNodeIDs = resolved
+        } else {
+            originNodeIDs = []
+        }
+
+        let origins = originNodeIDs.isEmpty
+            ? [(x: 0.0, y: 0.0)]
+            : originNodeIDs.map { nodeID in
+                (
+                    x: number(for: nodeID, property: "offset.x", default: 0),
+                    y: number(for: nodeID, property: "offset.y", default: 0)
+                )
+            }
+
+        for origin in origins {
+            for component in spawn.components {
+                guard activeComponents.count < MotionActionLimits.maxActiveComponents else { return }
+                activeComponents.append(makeComponent(
+                    spawnID: spawn.id,
+                    component: component,
+                    originX: origin.x,
+                    originY: origin.y
+                ))
+            }
+        }
+    }
+
+    private func makeComponent(
+        spawnID: String,
+        component: MotionComponentSpec,
+        originX: Double,
+        originY: Double
+    ) -> MotionComponentRuntime {
+        var channels: [String: MotionChannel] = [:]
+        var properties = Set(component.from.keys)
+        properties.formUnion(component.to.keys)
+        properties.formUnion(["offset.x", "offset.y", "scale", "opacity"])
+
+        for property in properties {
+            let explicitFrom = component.from[property].flatMap(resolveNumber)
+            let explicitTo = component.to[property].flatMap(resolveNumber)
+            let fromValue = explicitFrom ?? defaultComponentValue(for: property, target: false)
+            let toValue = explicitTo ?? defaultComponentValue(for: property, target: true)
+            let adjustedFrom = fromValue + ((property == "offset.x") ? originX : (property == "offset.y" ? originY : 0))
+            let adjustedTo = toValue + ((property == "offset.x") ? originX : (property == "offset.y" ? originY : 0))
+
+            channels[property] = MotionChannel(
+                current: adjustedFrom,
+                velocity: 0,
+                target: adjustedTo,
+                motion: component.motion,
+                animationStart: adjustedFrom,
+                animationElapsed: 0
+            )
+        }
+
+        return MotionComponentRuntime(
+            id: "\(spawnID)-\(component.id)-\(UUID().uuidString)",
+            kind: component.kind,
+            layout: component.layout,
+            style: component.style,
+            channels: channels,
+            lifetime: component.lifetime,
+            elapsed: 0
+        )
+    }
+
+    private func defaultComponentValue(for property: String, target: Bool) -> Double {
+        switch property {
+        case "scale":
+            return target ? 1 : 0.8
         case "opacity":
             return target ? 0 : 1
         default:
@@ -2388,6 +2559,20 @@ public final class MotionEngine {
 
             if activeParticles[index].elapsed >= activeParticles[index].lifetime {
                 activeParticles.remove(at: index)
+            } else {
+                hasActiveChannels = true
+            }
+        }
+
+        for index in activeComponents.indices.reversed() {
+            activeComponents[index].elapsed += dt
+            let channelKeys = Array(activeComponents[index].channels.keys)
+            for key in channelKeys {
+                activeComponents[index].channels[key]?.integrate(dt: dt)
+            }
+
+            if activeComponents[index].elapsed >= activeComponents[index].lifetime {
+                activeComponents.remove(at: index)
             } else {
                 hasActiveChannels = true
             }
