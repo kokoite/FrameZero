@@ -8,13 +8,16 @@ import {
   type StudioProject
 } from "@framezero/compiler";
 import { orbPlaygroundProject } from "@framezero/fixtures";
-import type { MotionAction, MotionAssignment, MotionFill, MotionPropertySelector, MotionRule, MotionSpec } from "@framezero/schema";
+import type { MotionAction, MotionAssignment, MotionFill, MotionPropertySelector, MotionRule, MotionSpec, MotionValue } from "@framezero/schema";
 import "./styles.css";
 
 type TargetMode = "selected" | "role";
 type NodeKindChoice = StudioNode["kind"];
 type SendState = "idle" | "sending" | "sent" | "failed";
 type WorkspaceMode = "design" | "animate";
+type InspectorTab = "properties" | "effects" | "code";
+type LeftPanelTab = "layers" | "assets";
+type ResizeCorner = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
 type PreviewTransform = {
   x: number;
   y: number;
@@ -98,6 +101,8 @@ type HapticAction = MotionAction & {
 };
 
 const storageKey = "framezero.studio.project.v4";
+const leftPanelWidthStorageKey = "framezero.studio.leftPanelWidth";
+const rightPanelWidthStorageKey = "framezero.studio.rightPanelWidth";
 const canvasWidth = 600;
 const canvasHeight = 400;
 const canvasCenter = { x: canvasWidth / 2, y: canvasHeight / 2 };
@@ -105,7 +110,7 @@ const transformProperties: MotionPropertySelector["properties"] = ["offset.x", "
 
 function App() {
   const [project, setProject] = useState<StudioProject>(() => loadStoredProject());
-  const [selectedNodeId, setSelectedNodeId] = useState(project.editor?.selection[0] ?? project.rootNodeId);
+  const [selectedNodeId, setSelectedNodeId] = useState(project.editor?.selection[0] ?? "");
   const [selectedPhaseId, setSelectedPhaseId] = useState(project.phaseOrder[0] ?? "");
   const [targetMode, setTargetMode] = useState<TargetMode>("selected");
   const [sendState, setSendState] = useState<SendState>("idle");
@@ -114,6 +119,11 @@ function App() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [selectedComponentId, setSelectedComponentId] = useState("");
+  const [showDeveloperOutput, setShowDeveloperOutput] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
+  const [leftPanelTab, setLeftPanelTab] = useState<LeftPanelTab>("layers");
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadStoredPanelWidth(leftPanelWidthStorageKey, 180, 148, 320));
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => loadStoredPanelWidth(rightPanelWidthStorageKey, 280, 248, 420));
 
   const compileResult = useMemo(() => {
     try {
@@ -123,7 +133,7 @@ function App() {
     }
   }, [project]);
 
-  const selectedNode = project.nodes[selectedNodeId] ?? project.nodes[project.rootNodeId];
+  const selectedNode = project.nodes[selectedNodeId];
   const selectedComponent = project.components[selectedComponentId];
   const selectedPhase = project.phases[selectedPhaseId] ?? project.phases[project.phaseOrder[0] ?? ""];
   const phaseTargets = selectedPhase ? readPhaseTargets(selectedPhase, selectedNode, targetMode) : defaultPhaseTargets();
@@ -158,6 +168,36 @@ function App() {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [isPreviewing, previewPlan.totalDuration]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+      if (isEditableKeyboardTarget(event.target)) return;
+
+      if (workspaceMode === "design" && selectedComponent) {
+        event.preventDefault();
+        deleteSelectedComponent();
+        return;
+      }
+
+      if (selectedNode && selectedNode.id !== project.rootNodeId) {
+        event.preventDefault();
+        deleteSelectedNode();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [workspaceMode, selectedComponent, selectedNode, project.rootNodeId]);
+
+  useEffect(() => {
+    window.localStorage.setItem(leftPanelWidthStorageKey, String(leftPanelWidth));
+  }, [leftPanelWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem(rightPanelWidthStorageKey, String(rightPanelWidth));
+  }, [rightPanelWidth]);
 
   function patchProject(updater: (draft: StudioProject) => void) {
     setProject((current) => {
@@ -196,6 +236,7 @@ function App() {
       draft.roles.actor ??= { id: "actor", name: "actor", description: "Elements animated together" };
       draft.editor = { selection: [id], viewportPreset: "iphone" };
       setSelectedNodeId(id);
+      setSelectedComponentId("");
     });
   }
 
@@ -220,6 +261,7 @@ function App() {
       };
       draft.nodes[draft.rootNodeId]?.childIds.push(id);
       setSelectedNodeId(id);
+      setSelectedComponentId("");
     });
   }
 
@@ -230,6 +272,7 @@ function App() {
       const component = defaultComponent(id, name, kind);
       draft.components[id] = component;
       setSelectedComponentId(id);
+      setSelectedNodeId(draft.rootNodeId);
     });
   }
 
@@ -241,6 +284,36 @@ function App() {
       const id = uniqueId(slug(source.name || "component"), draft.components);
       draft.components[id] = componentFromNode(id, source);
       setSelectedComponentId(id);
+      setSelectedNodeId(draft.rootNodeId);
+    });
+  }
+
+  function duplicateSelectedComponent() {
+    if (!selectedComponent) return;
+    patchProject((draft) => {
+      const source = draft.components[selectedComponent.id];
+      if (!source) return;
+      const id = uniqueId(slug(`${source.name}-copy`), draft.components);
+      draft.components[id] = {
+        ...clone(source),
+        id,
+        name: `${source.name} Copy`
+      };
+      setSelectedComponentId(id);
+      setSelectedNodeId(draft.rootNodeId);
+    });
+  }
+
+  function detachSelectedInstance() {
+    if (!selectedNode?.componentId) return;
+    patchProject((draft) => {
+      const node = draft.nodes[selectedNode.id];
+      if (!node) return;
+      const componentRole = `component:${node.componentId}`;
+      delete node.componentId;
+      node.roles = node.roles.filter((role) => role !== componentRole);
+      if (node.roles.length === 0) node.roles = ["actor"];
+      setSelectedComponentId("");
     });
   }
 
@@ -257,6 +330,110 @@ function App() {
       draft.editor = { selection: [node.id], viewportPreset: "iphone" };
       setSelectedNodeId(node.id);
       setSelectedComponentId("");
+    });
+  }
+
+  function createSyncedComponentSet() {
+    patchProject((draft) => {
+      const orbComponentId = ensureComponent(
+        draft,
+        "syncOrb",
+        "Sync Orb",
+        "circle",
+        { width: 84, height: 84 },
+        {
+          backgroundColor: "#5ED8FF",
+          gradientEndColor: "#B58CFF",
+          gradientAngle: 135,
+          shadowBlur: 22,
+          shadowColor: "#5ED8FF",
+          shadowOpacity: 0.35
+        },
+        [radialFill("#E0F2FE", "#5ED8FF", 0.36, 0.28, 82, 0, 1, 1)]
+      );
+      const cardComponentId = ensureComponent(
+        draft,
+        "syncCard",
+        "Sync Card",
+        "roundedRectangle",
+        { width: 158, height: 92 },
+        {
+          backgroundColor: "#1E2A44",
+          gradientEndColor: "#0EA5E9",
+          gradientAngle: 120,
+          cornerRadius: 18,
+          strokeWidth: 1,
+          strokeColor: "#5ED8FF",
+          shadowBlur: 18,
+          shadowColor: "#0EA5E9",
+          shadowOpacity: 0.22
+        },
+        [linearFill("#1E2A44", "#0EA5E9", 120, 0, 1, 0.94)]
+      );
+      const labelComponentId = ensureComponent(
+        draft,
+        "syncLabel",
+        "Sync Label",
+        "text",
+        {},
+        { text: "Synced motion", foregroundColor: "#E0F2FE" },
+        []
+      );
+
+      const groupRole = "syncGroup";
+      draft.roles[groupRole] = {
+        id: groupRole,
+        name: "syncGroup",
+        description: "Components animated together from one phase"
+      };
+
+      const nodes = [
+        createInstanceAt(draft, draft.components[cardComponentId] as StudioComponent, "Sync Card", -88, 34, groupRole),
+        createInstanceAt(draft, draft.components[orbComponentId] as StudioComponent, "Sync Orb", 74, -28, groupRole),
+        createInstanceAt(draft, draft.components[labelComponentId] as StudioComponent, "Sync Label", -24, -112, groupRole)
+      ];
+      const firstNode = nodes[0];
+
+      const phaseId = uniqueId("syncedEnsemble", draft.phases);
+      const selector: MotionPropertySelector = { role: groupRole, properties: transformProperties };
+      draft.phases[phaseId] = {
+        id: phaseId,
+        name: "Synced Ensemble",
+        mode: "absolute",
+        startDelay: 0,
+        nextMode: "afterPreviousSettles",
+        nextAt: null,
+        targets: [
+          { select: { role: groupRole, properties: ["offset.x"] }, value: 118 },
+          { select: { role: groupRole, properties: ["offset.y"] }, value: -42 },
+          { select: { role: groupRole, properties: ["scale"] }, value: 1.16 },
+          { select: { role: groupRole, properties: ["rotation"] }, value: 18 },
+          { select: { role: groupRole, properties: ["opacity"] }, value: 1 }
+        ],
+        rules: [{ select: selector, motion: { type: "spring", response: 0.54, dampingFraction: 0.7 } }],
+        arcs: [{
+          select: { role: groupRole },
+          x: "offset.x",
+          y: "offset.y",
+          direction: "clockwise",
+          bend: 64,
+          motion: { type: "spring", response: 0.54, dampingFraction: 0.7 }
+        }],
+        jiggles: [],
+        actions: [
+          { type: "screenShake", amplitude: 3, duration: 0.22, frequency: 24, decay: 1.8 },
+          { type: "haptic", style: "selection", intensity: 0.55 }
+        ]
+      };
+      draft.phaseOrder.push(phaseId);
+      draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: firstNode ? [firstNode.id] : [] };
+      setSelectedNodeId(firstNode?.id ?? "");
+      setSelectedComponentId("");
+      setSelectedPhaseId(phaseId);
+      setTargetMode("role");
+      setWorkspaceMode("animate");
+      stopWebPreview();
+      setPreviewTime(0);
     });
   }
 
@@ -294,6 +471,7 @@ function App() {
       for (const node of Object.values(draft.nodes)) {
         node.childIds = node.childIds.filter((childId) => childId !== selectedNode.id);
       }
+      removeNodeMotionReferences(draft, selectedNode.id);
       setSelectedNodeId(draft.rootNodeId);
     });
   }
@@ -523,10 +701,18 @@ function App() {
     const fresh = cloneProject(orbPlaygroundProject);
     saveStoredProject(fresh);
     setProject(fresh);
-    setSelectedNodeId(fresh.editor?.selection[0] ?? fresh.rootNodeId);
+    setSelectedNodeId(fresh.editor?.selection[0] ?? "");
     setSelectedPhaseId(fresh.phaseOrder[0] ?? "");
     setSelectedComponentId("");
     setBridgeMessage("Reset to fixture");
+  }
+
+  function clearCanvasSelection() {
+    setSelectedNodeId("");
+    setSelectedComponentId("");
+    patchProject((draft) => {
+      draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [] };
+    });
   }
 
   function downloadJson() {
@@ -566,6 +752,7 @@ function App() {
     const phaseIdForDrag = selectedPhaseId;
 
     setSelectedNodeId(nodeId);
+    setSelectedComponentId("");
     setIsPreviewing(false);
     setPreviewTime(0);
     event.preventDefault();
@@ -620,25 +807,121 @@ function App() {
     window.addEventListener("pointercancel", stop, { once: true });
   }
 
+  function startCanvasResize(nodeId: string, corner: ResizeCorner, event: React.PointerEvent<HTMLElement>) {
+    const canvas = event.currentTarget.closest(".phone-canvas");
+    if (!(canvas instanceof HTMLElement)) return;
+
+    const node = project.nodes[nodeId];
+    if (!node || node.id === project.rootNodeId) return;
+    const canvasElement = canvas;
+    const startPoint = pointInCanvas(canvasElement, event.clientX, event.clientY);
+    const startWidth = nodeWidth(node);
+    const startHeight = nodeHeight(node);
+    const startOffset = {
+      x: numberValue(node.presentation["offset.x"]),
+      y: numberValue(node.presentation["offset.y"])
+    };
+
+    setSelectedNodeId(nodeId);
+    setSelectedComponentId("");
+    event.preventDefault();
+    event.stopPropagation();
+
+    function move(moveEvent: PointerEvent) {
+      const point = pointInCanvas(canvasElement, moveEvent.clientX, moveEvent.clientY);
+      const dx = point.x - startPoint.x;
+      const dy = point.y - startPoint.y;
+      const affectsLeft = corner.includes("w");
+      const affectsRight = corner.includes("e");
+      const affectsTop = corner.includes("n");
+      const affectsBottom = corner.includes("s");
+      const nextWidth = affectsLeft || affectsRight ? Math.max(12, round(startWidth + (affectsLeft ? -dx : dx))) : startWidth;
+      const nextHeight = affectsTop || affectsBottom ? Math.max(12, round(startHeight + (affectsTop ? -dy : dy))) : startHeight;
+      const centerShiftX = affectsLeft || affectsRight ? (affectsLeft ? -1 : 1) * (nextWidth - startWidth) / 2 : 0;
+      const centerShiftY = affectsTop || affectsBottom ? (affectsTop ? -1 : 1) * (nextHeight - startHeight) / 2 : 0;
+
+      setProject((current) => {
+        const draft = cloneProject(current);
+        const resizingNode = draft.nodes[nodeId];
+        if (!resizingNode) return current;
+        resizingNode.layout.width = nextWidth;
+        resizingNode.layout.height = nextHeight;
+        resizingNode.presentation["offset.x"] = round(startOffset.x + centerShiftX);
+        resizingNode.presentation["offset.y"] = round(startOffset.y + centerShiftY);
+        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [nodeId] };
+        saveStoredProject(draft);
+        return draft;
+      });
+    }
+
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  }
+
+  function startPanelResize(side: "left" | "right", event: React.PointerEvent<HTMLElement>) {
+    const startX = event.clientX;
+    const startLeft = leftPanelWidth;
+    const startRight = rightPanelWidth;
+    event.preventDefault();
+    event.stopPropagation();
+
+    function move(moveEvent: PointerEvent) {
+      const dx = moveEvent.clientX - startX;
+      if (side === "left") {
+        setLeftPanelWidth(clamp(round(startLeft + dx), 148, 320));
+      } else {
+        setRightPanelWidth(clamp(round(startRight - dx), 248, 420));
+      }
+    }
+
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  }
+
   return (
-    <main className="studio-shell">
+    <main
+      className={`studio-shell ${workspaceMode === "design" ? "design-mode" : "animate-mode"}`}
+      style={{
+        "--left-panel-width": `${leftPanelWidth}px`,
+        "--right-panel-width": `${rightPanelWidth}px`
+      } as React.CSSProperties}
+    >
       <header className="app-toolbar">
         <div className="brand-lockup">
           <strong>FrameZero</strong>
           <span>{project.name}</span>
         </div>
 
-        <div className="tool-strip" aria-label="Add components">
-          <button type="button" className={workspaceMode === "design" ? "mode-tab active" : "mode-tab"} onClick={() => {
-            stopWebPreview();
-            setWorkspaceMode("design");
-          }}>Design</button>
-          <button type="button" className={workspaceMode === "animate" ? "mode-tab active" : "mode-tab"} onClick={() => setWorkspaceMode("animate")}>Animate</button>
-          <span className="toolbar-divider" />
-          <button type="button" onClick={() => addNode("circle")}>Circle</button>
-          <button type="button" onClick={() => addNode("roundedRectangle")}>Rectangle</button>
-          <button type="button" onClick={() => addNode("text")}>Text</button>
-          <button type="button" onClick={duplicateSelectedNode} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Duplicate</button>
+        <div className="tool-strip" aria-label="Editor tools">
+          <div className="toolbar-group">
+            <button type="button" className={workspaceMode === "design" ? "mode-tab active" : "mode-tab"} onClick={() => {
+              stopWebPreview();
+              setWorkspaceMode("design");
+            }}>Design</button>
+            <button type="button" className={workspaceMode === "animate" ? "mode-tab active" : "mode-tab"} onClick={() => setWorkspaceMode("animate")}>Animate</button>
+          </div>
+          <div className="toolbar-group">
+            <button type="button" onClick={() => addNode("circle")}>Circle</button>
+            <button type="button" onClick={() => addNode("roundedRectangle")}>Rectangle</button>
+            <button type="button" onClick={() => addNode("text")}>Text</button>
+          </div>
+          <div className="toolbar-group">
+            <button type="button" onClick={duplicateSelectedNode} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Duplicate</button>
+          </div>
         </div>
 
         <div className="toolbar-actions">
@@ -654,71 +937,17 @@ function App() {
 
       <aside className="panel left-panel">
         <div className="panel-header">
-          <p className="eyebrow">Layers</p>
-          <h1>Objects</h1>
+          <p className="eyebrow">Document</p>
+          <h1>{leftPanelTab === "layers" ? "Layers" : "Assets"}</h1>
+          <div className="left-tabs" role="tablist" aria-label="Document panel">
+            <button type="button" className={leftPanelTab === "layers" ? "active" : ""} onClick={() => setLeftPanelTab("layers")}>Layers</button>
+            <button type="button" className={leftPanelTab === "assets" ? "active" : ""} onClick={() => setLeftPanelTab("assets")}>Assets</button>
+          </div>
         </div>
 
-        <section>
-          <div className="section-heading">
-            <h2>Add Object</h2>
-            <span>{Object.keys(project.nodes).length}</span>
-          </div>
-          <div className="button-grid">
-            <button type="button" onClick={() => addNode("circle")}>Circle</button>
-            <button type="button" onClick={() => addNode("roundedRectangle")}>Rectangle</button>
-            <button type="button" onClick={() => addNode("text")}>Text</button>
-            <button type="button" onClick={duplicateSelectedNode} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Duplicate</button>
-          </div>
-        </section>
-
-        <section>
-          <div className="section-heading">
-            <h2>Assets</h2>
-            <span>{Object.keys(project.components).length}</span>
-          </div>
-          <div className="button-grid">
-            <button type="button" className="primary field-wide" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Create Component</button>
-            <button type="button" onClick={() => createComponent("circle")}>Blank Circle</button>
-            <button type="button" onClick={() => createComponent("roundedRectangle")}>Blank Card</button>
-            <button type="button" onClick={() => createComponent("text")}>Blank Text</button>
-          </div>
-          <div className="component-list">
-            {Object.values(project.components).map((component) => (
-              <button
-                type="button"
-                className={`component-row ${selectedComponentId === component.id ? "selected" : ""}`}
-                key={component.id}
-                onClick={() => setSelectedComponentId(component.id)}
-              >
-                <ComponentSwatch component={component} />
-                <div>
-                  <strong>{component.name}</strong>
-                  <small>{component.kind ?? "component"} · reusable asset</small>
-                </div>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="mini-action"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    instantiateComponent(component.id);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      instantiateComponent(component.id);
-                    }
-                  }}
-                >
-                  Place
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section>
+        {leftPanelTab === "layers" ? (
+        <>
+        <section className="left-section document-layers">
           <div className="section-heading">
             <h2>Layers</h2>
             <span>{Object.keys(project.nodes).length}</span>
@@ -729,19 +958,21 @@ function App() {
                 type="button"
                 className={`layer-row ${selectedNodeId === node.id ? "selected" : ""}`}
                 key={node.id}
-                onClick={() => setSelectedNodeId(node.id)}
+                onClick={() => {
+                  setSelectedNodeId(node.id);
+                  setSelectedComponentId("");
+                }}
               >
                 <span className={`kind-dot kind-${node.kind}`} />
-                <div>
-                  <strong>{node.name}</strong>
-                  <small>#{node.id} · {node.kind}</small>
-                </div>
-              </button>
+                  <div>
+                    <strong>{node.name}</strong>
+                    <small>{node.componentId ? <b>Instance</b> : null}<span>#{node.id} · {node.kind}</span></small>
+                  </div>
+                </button>
             ))}
           </div>
         </section>
-
-        <section>
+        <section className="left-section role-groups">
           <div className="section-heading">
             <h2>Groups</h2>
             <span>roles</span>
@@ -752,6 +983,81 @@ function App() {
             ))}
           </div>
         </section>
+        </>
+        ) : null}
+
+        {leftPanelTab === "assets" ? (
+        <section className="left-section component-library">
+          <div className="section-heading">
+            <h2>Components</h2>
+            <span>{Object.keys(project.components).length}</span>
+          </div>
+          <p className="panel-hint">Reusable sources. Place instances onto the artboard.</p>
+          <div className="button-grid">
+            {selectedNode?.componentId ? (
+              <button type="button" className="secondary-link field-wide" onClick={() => {
+                setSelectedComponentId(selectedNode.componentId ?? "");
+                setSelectedNodeId(project.rootNodeId);
+              }}>Edit Main Component</button>
+            ) : (
+              <button type="button" className="primary field-wide" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Create Component from Selection</button>
+            )}
+            <button type="button" className="component-create field-wide" onClick={() => createComponent("circle")}>New Main Component</button>
+            <button type="button" className="component-create field-wide synced-action" onClick={createSyncedComponentSet}>Create Synced Set</button>
+            <button type="button" className="component-create" onClick={() => createComponent("circle")}><span className="kind-dot kind-circle" />Circle</button>
+            <button type="button" className="component-create" onClick={() => createComponent("roundedRectangle")}><span className="kind-dot kind-roundedRectangle" />Card</button>
+            <button type="button" className="component-create" onClick={() => createComponent("text")}><span className="kind-dot kind-text" />Text</button>
+          </div>
+          <div className="component-list">
+            {Object.values(project.components).map((component) => {
+              const isSelectedComponent = selectedComponentId === component.id;
+              const isSourceForSelection = selectedNode?.componentId === component.id;
+              return (
+              <div
+                role="group"
+                className={`component-row ${isSelectedComponent ? "selected" : ""} ${isSourceForSelection ? "source-active" : ""}`}
+                key={component.id}
+              >
+                <ComponentSwatch component={component} />
+                <div>
+                  <span className="asset-kicker">{isSourceForSelection ? "Source" : "Main"}</span>
+                  <strong>{component.name}</strong>
+                  <span className="asset-meta"><b>{component.kind === "roundedRectangle" ? "card" : component.kind ?? "component"}</b><b>{instanceCount(project, component.id)} inst</b></span>
+                </div>
+                <div className="asset-actions">
+                  <button
+                    type="button"
+                    className="mini-action edit"
+                    onClick={() => {
+                      setSelectedComponentId(component.id);
+                      setSelectedNodeId(project.rootNodeId);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="mini-action place"
+                    onClick={() => {
+                    instantiateComponent(component.id);
+                    }}
+                  >
+                    Place
+                  </button>
+                </div>
+              </div>
+            );
+            })}
+          </div>
+        </section>
+        ) : null}
+        <div
+          className="panel-resizer left-resizer"
+          role="separator"
+          aria-label="Resize left panel"
+          aria-orientation="vertical"
+          onPointerDown={(event) => startPanelResize("left", event)}
+        />
       </aside>
 
       <section className="canvas-column">
@@ -759,6 +1065,10 @@ function App() {
           <div>
             <p className="eyebrow">Canvas</p>
             <h2>{isPreviewing || previewTime > 0 ? `Preview ${previewTime.toFixed(2)}s` : `${workspaceMode === "design" ? "Design" : "Animate"} · ${selectedNode?.name ?? "No object selected"}`}</h2>
+          </div>
+          <div className="canvas-state">
+            <span className={selectedNode?.componentId ? "status-badge" : "status-badge plain"}>{selectedNode?.componentId ? "Instance" : "Layer"}</span>
+            <small>{selectedNode?.componentId ? project.components[selectedNode.componentId]?.name ?? selectedNode.componentId : selectedNode?.kind ?? "none"}</small>
           </div>
           <div className={`runtime-status ${compileResult.ok ? "ok" : "bad"}`}>
             <span className="status-light" />
@@ -769,6 +1079,11 @@ function App() {
         <div className="canvas-frame">
           <div
             className="phone-canvas"
+            onPointerDown={(event) => {
+              const target = event.target;
+              if (target instanceof HTMLElement && target.closest(".canvas-node, .canvas-tool-hud, .canvas-side-tools")) return;
+              clearCanvasSelection();
+            }}
             style={{
               transform: `translate(${previewFrame.shake.x}px, ${previewFrame.shake.y}px)`
             }}
@@ -776,7 +1091,26 @@ function App() {
             <div className="grid" />
             <div className="axis x-axis" />
             <div className="axis y-axis" />
+            <span className="artboard-label">600 x 400</span>
             <span className="origin-label">origin</span>
+            <div className="ruler ruler-top" aria-hidden="true">
+              {rulerTicks(canvasWidth).map((tick) => <span key={tick} style={{ left: `${(tick / canvasWidth) * 100}%` }}>{tick}</span>)}
+            </div>
+            <div className="ruler ruler-left" aria-hidden="true">
+              {rulerTicks(canvasHeight).map((tick) => <span key={tick} style={{ top: `${(tick / canvasHeight) * 100}%` }}>{tick}</span>)}
+            </div>
+            <div className="canvas-tool-hud" aria-label="Canvas manipulation tools">
+              <button type="button" className="hud-tool active">Move</button>
+              <button type="button" className="hud-tool live">Resize</button>
+              <button type="button" className="hud-tool">Pivot</button>
+              <button type="button" className="hud-tool">Snap 8</button>
+            </div>
+            <div className="canvas-side-tools" aria-label="Selection tools">
+              <button type="button" className="active">V</button>
+              <button type="button">R</button>
+              <button type="button">P</button>
+            </div>
+            <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
             {orderedNodes(project)
               .filter((node) => node.id !== project.rootNodeId)
               .map((node) => (
@@ -785,6 +1119,7 @@ function App() {
                   node={node}
                   selected={node.id === selectedNodeId}
                   onPointerDown={(event) => startCanvasDrag(node.id, event)}
+                  onResizeStart={(corner, event) => startCanvasResize(node.id, corner, event)}
                   {...(previewFrame.transforms[node.id] ? { previewTransform: previewFrame.transforms[node.id] } : {})}
                   {...(workspaceMode === "animate" && selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
                 />
@@ -798,6 +1133,33 @@ function App() {
       </section>
 
       <aside className="panel right-panel">
+        <div
+          className="panel-resizer right-resizer"
+          role="separator"
+          aria-label="Resize right panel"
+          aria-orientation="vertical"
+          onPointerDown={(event) => startPanelResize("right", event)}
+        />
+        {workspaceMode === "design" ? (
+          <div className="inspector-tabs" role="tablist" aria-label="Inspector sections">
+            {([
+              ["properties", "Properties"],
+              ["effects", "Effects"],
+              ["code", "Code"]
+            ] as const).map(([tab, label]) => (
+              <button
+                type="button"
+                key={tab}
+                className={inspectorTab === tab ? "active" : ""}
+                onClick={() => setInspectorTab(tab)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {workspaceMode === "animate" ? (
         <section className="action-strip">
           <strong>Preview</strong>
           <button type="button" onClick={isPreviewing ? stopWebPreview : playWebPreview}>
@@ -809,16 +1171,21 @@ function App() {
           </div>
           <p className={`bridge-message ${sendState}`}>{bridgeMessage}</p>
         </section>
+        ) : null}
 
-        {workspaceMode === "design" ? (
+        {workspaceMode === "design" && selectedComponent && inspectorTab === "properties" ? (
         <section>
           <div className="section-heading">
-            <h2>Asset Properties</h2>
+            <h2>Main Component</h2>
             {selectedComponent ? <button type="button" className="danger" onClick={deleteSelectedComponent}>Delete Component</button> : null}
           </div>
-          {selectedComponent ? (
-            <>
+          <>
               <ComponentPreview component={selectedComponent} />
+              <p className="inline-note compact-note component-note"><span className="status-badge">Main</span> Editing the source component. Every placed instance updates from this definition.</p>
+              <div className="component-actions">
+                <button type="button" className="primary" onClick={() => instantiateComponent(selectedComponent.id)}>Place Instance</button>
+                <button type="button" onClick={duplicateSelectedComponent}>Duplicate Main</button>
+              </div>
               <div className="form-grid">
                 <label>Name<input value={selectedComponent.name} onChange={(event) => updateSelectedComponent((component) => { component.name = event.target.value; })} /></label>
                 <div className="field-block field-wide">
@@ -858,22 +1225,27 @@ function App() {
                   })} /></label>
                 ) : null}
               </div>
-              <StyleEditor
-                kind={selectedComponent.kind ?? "circle"}
-                style={selectedComponent.style ?? {}}
-                fills={selectedComponent.fills ?? []}
-                onChange={(style) => updateSelectedComponent((component) => { component.style = style; })}
-                onFillsChange={(fills) => updateSelectedComponent((component) => { component.fills = fills; })}
-              />
-              <button type="button" className="primary full-width" onClick={() => instantiateComponent(selectedComponent.id)}>Place Instance</button>
-            </>
-          ) : (
-            <p className="inline-note">Select an asset from the left Project panel to edit its shape, size, fill, and gradient. Assets are reusable; placing one on the canvas creates a layer instance.</p>
-          )}
+          </>
         </section>
         ) : null}
 
-        {workspaceMode === "design" ? (
+        {workspaceMode === "design" && selectedComponent && inspectorTab === "effects" ? (
+          <section>
+            <div className="section-heading">
+              <h2>Component Effects</h2>
+            </div>
+            <ComponentPreview component={selectedComponent} />
+            <StyleEditor
+              kind={selectedComponent.kind ?? "circle"}
+              style={selectedComponent.style ?? {}}
+              fills={selectedComponent.fills ?? []}
+              onChange={(style) => updateSelectedComponent((component) => { component.style = style; })}
+              onFillsChange={(fills) => updateSelectedComponent((component) => { component.fills = fills; })}
+            />
+          </section>
+        ) : null}
+
+        {workspaceMode === "design" && !selectedComponent && inspectorTab === "properties" ? (
         <section>
           <div className="section-heading">
             <h2>Inspector</h2>
@@ -881,30 +1253,74 @@ function App() {
           </div>
           {selectedNode ? (
             <>
+              {selectedNode.componentId ? null : selectedNode.id === project.rootNodeId ? (
+                <p className="inline-note compact-note"><strong>Scene root</strong>. Add layers or place component instances to build the composition.</p>
+              ) : (
+                <p className="inline-note compact-note"><strong>Plain layer</strong>. Use Create from Selection to save it as a reusable component.</p>
+              )}
               {selectedNode.componentId ? (
-                <p className="inline-note">Instance of {project.components[selectedNode.componentId]?.name ?? selectedNode.componentId}. Edit the asset to update all instances, or move this instance independently on the canvas.</p>
+                <div className="instance-overview" aria-label="Instance override summary">
+                  <span><b>Instance</b>{selectedNode.name}</span>
+                  <span><b>Main</b>{project.components[selectedNode.componentId]?.name ?? selectedNode.componentId}</span>
+                </div>
               ) : null}
+              {selectedNode.componentId ? (
+                <div className="component-actions">
+                  <button type="button" className="secondary-link" onClick={() => {
+                    setSelectedComponentId(selectedNode.componentId ?? "");
+                    setSelectedNodeId(project.rootNodeId);
+                  }}>Edit Main</button>
+                  <button type="button" onClick={detachSelectedInstance}>Detach Instance</button>
+                </div>
+              ) : null}
+              <div className="inspector-group">
+                <h3><span>01</span> Identity</h3>
               <div className="form-grid">
                 <label>Name<input value={selectedNode.name} onChange={(event) => updateSelectedNode((node) => { node.name = event.target.value; })} /></label>
                 <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label>
+              </div>
+              </div>
+              <div className="inspector-group">
+                <h3><span>02</span> Transform</h3>
+                <div className="form-grid">
+                <NumberField label="Frame X" value={nodeFrameX(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameX(node, value); })} />
+                <NumberField label="Frame Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
                 <NumberField label="Width" value={numberValue(selectedNode.layout.width, 80)} onChange={(value) => updateSelectedNode((node) => { node.layout.width = value; })} />
                 <NumberField label="Height" value={numberValue(selectedNode.layout.height, 80)} onChange={(value) => updateSelectedNode((node) => { node.layout.height = value; })} />
-                <NumberField label="Origin X" value={numberValue(selectedNode.presentation["offset.x"])} onChange={(value) => updateSelectedNode((node) => { node.presentation["offset.x"] = value; })} />
-                <NumberField label="Origin Y" value={numberValue(selectedNode.presentation["offset.y"])} onChange={(value) => updateSelectedNode((node) => { node.presentation["offset.y"] = value; })} />
                 {selectedNode.kind === "text" ? (
                   <label>Text<input value={String(selectedNode.style.text ?? selectedNode.name)} onChange={(event) => updateSelectedNode((node) => { node.style.text = event.target.value; })} /></label>
                 ) : null}
+                </div>
               </div>
-              <StyleEditor
-                kind={selectedNode.kind}
-                style={selectedNode.style}
-                fills={selectedNode.fills ?? []}
-                onChange={(style) => updateSelectedNode((node) => { node.style = style; })}
-                onFillsChange={(fills) => updateSelectedNode((node) => { node.fills = fills; })}
-              />
+              <div className="inspector-group inspector-summary">
+                <h3><span>03</span> Runtime</h3>
+                <div className="summary-grid">
+                  <span><b>Selector</b>#{selectedNode.id}</span>
+                  <span><b>Kind</b>{selectedNode.kind}</span>
+                  <span><b>Effects</b>{hasVisualEffects(selectedNode) ? "custom" : "default"}</span>
+                  <span><b>Motion</b>{nodeUsedInAnimation(project, selectedNode.id) ? "bound" : "ready"}</span>
+                </div>
+                <p className="panel-hint">Use Effects for visual styling and Animate for motion phases. This layer keeps the same runtime identity in exported JSON.</p>
+              </div>
             </>
           ) : null}
         </section>
+        ) : null}
+
+        {workspaceMode === "design" && !selectedComponent && selectedNode && inspectorTab === "effects" ? (
+          <section>
+            <div className="section-heading">
+              <h2>Layer Effects</h2>
+              {selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
+            </div>
+            <StyleEditor
+              kind={selectedNode.kind}
+              style={selectedNode.style}
+              fills={selectedNode.fills ?? []}
+              onChange={(style) => updateSelectedNode((node) => { node.style = style; })}
+              onFillsChange={(fills) => updateSelectedNode((node) => { node.fills = fills; })}
+            />
+          </section>
         ) : null}
 
         {workspaceMode === "animate" && selectedPhase ? (
@@ -987,28 +1403,49 @@ function App() {
           </section>
         ) : null}
 
+        {workspaceMode === "design" && inspectorTab === "code" ? (
+          <section className="json-section">
+            <div className="section-heading"><h2>Runtime JSON</h2></div>
+            <pre>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
+          </section>
+        ) : null}
+
+        {workspaceMode === "animate" ? (
         <section className="json-section">
-          <div className="section-heading"><h2>Generated .motion.json</h2></div>
-          <pre>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
+          <button type="button" className="dev-toggle" onClick={() => setShowDeveloperOutput((value) => !value)}>
+            {showDeveloperOutput ? "Hide Runtime JSON" : "Show Runtime JSON"}
+          </button>
+          {showDeveloperOutput ? (
+            <>
+              <div className="section-heading"><h2>Generated .motion.json</h2></div>
+              <pre>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
+            </>
+          ) : null}
         </section>
+        ) : null}
       </aside>
 
       <section className="timeline-panel">
         {workspaceMode === "design" ? (
-          <div className="design-flow">
+          <div className="selection-status">
             <div>
-              <p className="eyebrow">Design Flow</p>
-              <h2>Components stay independent. Place instances, then animate those layers.</h2>
+              <p className="eyebrow">Selection</p>
+              <h2>{selectedNode?.name ?? "Nothing selected"}</h2>
+              <span>{selectionKind(project, selectedNode)} · {selectedNode?.kind ?? "none"}</span>
             </div>
-            <div className="flow-steps" aria-label="Design workflow">
-              <span>Layer</span>
-              <i />
-              <span>Component Asset</span>
-              <i />
-              <span>Placed Instance</span>
-              <i />
-              <span>Animate</span>
-            </div>
+            {selectedNode ? (
+              <div className="quick-transform" aria-label="Quick transform controls">
+                <NumberField label="X" value={nodeFrameX(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameX(node, value); })} />
+                <NumberField label="Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
+                <NumberField label="W" value={nodeWidth(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.width = value; })} />
+                <NumberField label="H" value={nodeHeight(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.height = value; })} />
+                <NumberField label="O" value={numberValue(selectedNode.presentation.opacity, 1)} step={0.05} onChange={(value) => updateSelectedNode((node) => { node.presentation.opacity = clamp(value, 0, 1); })} />
+              </div>
+            ) : (
+              <div className="status-metrics">
+                <span>No layer selected</span>
+              </div>
+            )}
           </div>
         ) : (
         <>
@@ -1076,6 +1513,94 @@ function App() {
       </section>
     </main>
   );
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.closest("input, textarea, select, [contenteditable='true']") !== null;
+}
+
+function removeNodeMotionReferences(project: StudioProject, nodeId: string) {
+  for (const phase of Object.values(project.phases)) {
+    phase.targets = phase.targets.filter((target) => target.select.id !== nodeId);
+    phase.rules = phase.rules.filter((rule) => rule.select.id !== nodeId);
+    phase.arcs = phase.arcs.filter((arc) => arc.select.id !== nodeId);
+    phase.jiggles = phase.jiggles.filter((jiggle) => jiggle.select.id !== nodeId);
+    phase.actions = phase.actions.filter((action) => !actionSelectorReferencesNode(action, nodeId));
+  }
+}
+
+function actionSelectorReferencesNode(action: MotionAction, nodeId: string) {
+  const selector = (action as { selector?: { id?: string } }).selector;
+  return selector?.id === nodeId;
+}
+
+function instanceCount(project: StudioProject, componentId: string) {
+  return Object.values(project.nodes).filter((node) => node.componentId === componentId).length;
+}
+
+function selectionKind(project: StudioProject, node: StudioNode | undefined) {
+  if (!node) return "No selection";
+  if (node.id === project.rootNodeId) return "Scene root";
+  if (node.componentId) return `Instance of ${project.components[node.componentId]?.name ?? node.componentId}`;
+  return "Plain layer";
+}
+
+function hasVisualEffects(node: StudioNode) {
+  const style = node.style;
+  return Boolean(
+    Number(style.blur ?? 0) > 0 ||
+    Number(style.strokeWidth ?? 0) > 0 ||
+    Number(style.shadowBlur ?? 0) > 0 ||
+    Number(style.shadowOpacity ?? 0) > 0
+  );
+}
+
+function nodeUsedInAnimation(project: StudioProject, nodeId: string) {
+  return Object.values(project.phases).some((phase) => (
+    phase.targets.some((target) => target.select.id === nodeId) ||
+    phase.rules.some((rule) => rule.select.id === nodeId) ||
+    phase.arcs.some((arc) => arc.select.id === nodeId) ||
+    phase.jiggles.some((jiggle) => jiggle.select.id === nodeId) ||
+    phase.actions.some((action) => actionSelectorReferencesNode(action, nodeId))
+  ));
+}
+
+function rulerTicks(size: number) {
+  const ticks: number[] = [];
+  for (let tick = 100; tick < size; tick += 100) {
+    ticks.push(tick);
+  }
+  return ticks;
+}
+
+function nodeWidth(node: StudioNode | undefined) {
+  if (!node) return 0;
+  return numberValue(node.layout.width, node.kind === "circle" ? 62 : 128);
+}
+
+function nodeHeight(node: StudioNode | undefined) {
+  if (!node) return 0;
+  return numberValue(node.layout.height, node.kind === "circle" ? 62 : 74);
+}
+
+function nodeFrameX(node: StudioNode | undefined) {
+  if (!node) return 0;
+  return canvasCenter.x + numberValue(node.presentation["offset.x"]) - nodeWidth(node) / 2;
+}
+
+function nodeFrameY(node: StudioNode | undefined) {
+  if (!node) return 0;
+  return canvasCenter.y + numberValue(node.presentation["offset.y"]) - nodeHeight(node) / 2;
+}
+
+function setNodeFrameX(node: StudioNode, value: number) {
+  node.presentation["offset.x"] = value - canvasCenter.x + nodeWidth(node) / 2;
+}
+
+function setNodeFrameY(node: StudioNode, value: number) {
+  node.presentation["offset.y"] = value - canvasCenter.y + nodeHeight(node) / 2;
 }
 
 function NumberField({ label, value, onChange, step = 1 }: { label: string; value: number; onChange: (value: number) => void; step?: number }) {
@@ -1205,9 +1730,13 @@ function StyleEditor({
     applyStyle({ ...style, foregroundColor: value }, fills);
   }
 
+  function patchStyleValue(key: string, value: MotionValue) {
+    applyStyle({ ...style, [key]: value }, fills);
+  }
+
   return (
-    <div className="control-cluster">
-      <h3>Appearance</h3>
+    <div className="control-cluster inspector-group appearance-group">
+      <h3><span>03</span> Appearance</h3>
       <div className="style-preview" style={{ background: visualBackground(style, kind, fills) }}>
         <span>{isText ? String(style.text ?? "Text") : "Fill"}</span>
       </div>
@@ -1236,8 +1765,32 @@ function StyleEditor({
           </div>
         </div>
         {fillType !== "solid" ? (
-          <>
-            <ColorField label="End Color" value={endColor} onChange={(value) => updateFill((current) => updateFillColor(current, "end", value))} />
+          <ColorField label="End Color" value={endColor} onChange={(value) => updateFill((current) => updateFillColor(current, "end", value))} />
+        ) : null}
+        <NumberField
+          label="Fill Opacity"
+          value={fillOpacity}
+          step={0.05}
+          onChange={(value) => updateFill((current) => ({ ...current, opacity: clamp(value, 0, 1) }))}
+        />
+      </div>
+      <details className="advanced-controls" open>
+        <summary>Effects</summary>
+        <div className="form-grid">
+          <NumberField label="Blur" value={numberValue(style.blur, 0)} step={1} onChange={(value) => patchStyleValue("blur", Math.max(0, value))} />
+          <NumberField label="Stroke Width" value={numberValue(style.strokeWidth, 0)} step={1} onChange={(value) => patchStyleValue("strokeWidth", Math.max(0, value))} />
+          <ColorField label="Stroke Color" value={String(style.strokeColor ?? "#E0F2FE")} onChange={(value) => patchStyleValue("strokeColor", value)} />
+          <ColorField label="Shadow Color" value={String(style.shadowColor ?? "#000000")} onChange={(value) => patchStyleValue("shadowColor", value)} />
+          <NumberField label="Shadow X" value={numberValue(style.shadowX, 0)} step={1} onChange={(value) => patchStyleValue("shadowX", value)} />
+          <NumberField label="Shadow Y" value={numberValue(style.shadowY, 0)} step={1} onChange={(value) => patchStyleValue("shadowY", value)} />
+          <NumberField label="Shadow Blur" value={numberValue(style.shadowBlur, 0)} step={1} onChange={(value) => patchStyleValue("shadowBlur", Math.max(0, value))} />
+          <NumberField label="Shadow Opacity" value={numberValue(style.shadowOpacity, 0)} step={0.05} onChange={(value) => patchStyleValue("shadowOpacity", clamp(value, 0, 1))} />
+        </div>
+      </details>
+      {fillType !== "solid" ? (
+        <details className="advanced-controls">
+          <summary>Gradient controls</summary>
+          <div className="form-grid">
             <NumberField
               label="Start Stop"
               value={startPosition}
@@ -1250,25 +1803,19 @@ function StyleEditor({
               step={0.05}
               onChange={(value) => updateFill((current) => updateFillStop(current, "end", clamp(value, 0, 1)))}
             />
-          </>
-        ) : null}
-        {fillType === "linearGradient" ? (
-          <NumberField label="Angle" value={fill.angle ?? 135} onChange={(value) => updateFill((current) => ({ ...asLinearFill(current, startColor, endColor), angle: value }))} />
-        ) : null}
-        {fillType === "radialGradient" ? (
-          <>
-            <NumberField label="Center X" value={fill.centerX ?? 0.5} step={0.05} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), centerX: clamp(value, 0, 1) }))} />
-            <NumberField label="Center Y" value={fill.centerY ?? 0.5} step={0.05} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), centerY: clamp(value, 0, 1) }))} />
-            <NumberField label="Radius" value={fill.radius ?? 90} step={5} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), radius: Math.max(1, value) }))} />
-          </>
-        ) : null}
-        <NumberField
-          label="Fill Opacity"
-          value={fillOpacity}
-          step={0.05}
-          onChange={(value) => updateFill((current) => ({ ...current, opacity: clamp(value, 0, 1) }))}
-        />
-      </div>
+            {fillType === "linearGradient" ? (
+              <NumberField label="Angle" value={fill.angle ?? 135} onChange={(value) => updateFill((current) => ({ ...asLinearFill(current, startColor, endColor), angle: value }))} />
+            ) : null}
+            {fillType === "radialGradient" ? (
+              <>
+                <NumberField label="Center X" value={fill.centerX ?? 0.5} step={0.05} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), centerX: clamp(value, 0, 1) }))} />
+                <NumberField label="Center Y" value={fill.centerY ?? 0.5} step={0.05} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), centerY: clamp(value, 0, 1) }))} />
+                <NumberField label="Radius" value={fill.radius ?? 90} step={5} onChange={(value) => updateFill((current) => ({ ...asRadialFill(current, startColor, endColor), radius: Math.max(1, value) }))} />
+              </>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -1280,7 +1827,8 @@ function ComponentSwatch({ component }: { component: StudioComponent }) {
       className={`component-swatch component-${kind}`}
       style={{
         background: visualBackground(component.style ?? {}, kind, component.fills ?? []),
-        borderRadius: kind === "circle" ? 999 : numberValue(component.style?.cornerRadius, 10)
+        borderRadius: kind === "circle" ? 999 : numberValue(component.style?.cornerRadius, 10),
+        ...visualEffects(component.style ?? {}, 0.35)
       }}
     />
   );
@@ -1299,7 +1847,8 @@ function ComponentPreview({ component }: { component: StudioComponent }) {
           height,
           background: visualBackground(component.style ?? {}, kind, component.fills ?? []),
           borderRadius: kind === "circle" ? 999 : numberValue(component.style?.cornerRadius, 18),
-          color: String(component.style?.foregroundColor ?? "#FFFFFF")
+          color: String(component.style?.foregroundColor ?? "#FFFFFF"),
+          ...visualEffects(component.style ?? {})
         }}
       >
         {kind === "text" ? String(component.style?.text ?? component.name) : ""}
@@ -1508,13 +2057,15 @@ function CanvasNode({
   selected,
   phaseTargets,
   previewTransform,
-  onPointerDown
+  onPointerDown,
+  onResizeStart
 }: {
   node: StudioNode;
   selected: boolean;
   phaseTargets?: ReturnType<typeof defaultPhaseTargets>;
   previewTransform?: PreviewTransform | undefined;
   onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onResizeStart?: (corner: ResizeCorner, event: React.PointerEvent<HTMLElement>) => void;
 }) {
   const originX = numberValue(node.presentation["offset.x"]);
   const originY = numberValue(node.presentation["offset.y"]);
@@ -1538,12 +2089,37 @@ function CanvasNode({
       ? "transparent"
       : visualBackground(node.style, node.kind, node.fills ?? []),
     color: String(node.style.foregroundColor ?? "#FFFFFF"),
-    borderRadius: node.kind === "circle" ? 999 : numberValue(node.style.cornerRadius, 12)
+    borderRadius: node.kind === "circle" ? 999 : numberValue(node.style.cornerRadius, 12),
+    ...visualEffects(node.style)
   } satisfies React.CSSProperties;
 
   return (
-    <div className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""}`} style={style} onPointerDown={onPointerDown}>
-      {node.kind === "text" ? String(node.style.text ?? node.name) : node.name}
+    <div
+      className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""}`}
+      data-node-id={node.id}
+      data-roles={node.roles.join(" ")}
+      style={style}
+      onPointerDown={onPointerDown}
+    >
+      {selected ? (
+        <>
+          <span className="selection-guide guide-x" aria-hidden="true" />
+          <span className="selection-guide guide-y" aria-hidden="true" />
+          <span className="selection-frame" aria-hidden="true" />
+          <span className="selection-rotate" aria-hidden="true" />
+          <span className="selection-handle nw" aria-label="Resize from top left" role="button" onPointerDown={(event) => onResizeStart?.("nw", event)} />
+          <span className="selection-handle n" aria-label="Resize from top" role="button" onPointerDown={(event) => onResizeStart?.("n", event)} />
+          <span className="selection-handle ne" aria-label="Resize from top right" role="button" onPointerDown={(event) => onResizeStart?.("ne", event)} />
+          <span className="selection-handle e" aria-label="Resize from right" role="button" onPointerDown={(event) => onResizeStart?.("e", event)} />
+          <span className="selection-handle s" aria-label="Resize from bottom" role="button" onPointerDown={(event) => onResizeStart?.("s", event)} />
+          <span className="selection-handle w" aria-label="Resize from left" role="button" onPointerDown={(event) => onResizeStart?.("w", event)} />
+          <span className="selection-handle sw" aria-label="Resize from bottom left" role="button" onPointerDown={(event) => onResizeStart?.("sw", event)} />
+          <span className="selection-handle se" aria-label="Resize from bottom right" role="button" onPointerDown={(event) => onResizeStart?.("se", event)} />
+          <span className="selection-pivot" aria-hidden="true" />
+          <span className="selection-size" aria-hidden="true">{round(width)} x {round(height)}</span>
+        </>
+      ) : null}
+      {node.kind === "text" ? String(node.style.text ?? node.name) : null}
     </div>
   );
 }
@@ -1602,12 +2178,31 @@ function loadStoredProject(): StudioProject {
   const raw = window.localStorage.getItem(storageKey);
   if (raw) {
     try {
-      return JSON.parse(raw) as StudioProject;
+      return normalizeLoadedProject(JSON.parse(raw) as StudioProject);
     } catch {
       window.localStorage.removeItem(storageKey);
     }
   }
   return cloneProject(orbPlaygroundProject);
+}
+
+function loadStoredPanelWidth(key: string, fallback: number, min: number, max: number) {
+  const raw = window.localStorage.getItem(key);
+  if (raw == null || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+}
+
+function normalizeLoadedProject(project: StudioProject) {
+  if (project.id !== orbPlaygroundProject.id) return project;
+  const selection = project.editor?.selection ?? [];
+  if (selection.length === 1 && selection[0] === "orb") {
+    return {
+      ...project,
+      editor: { viewportPreset: project.editor?.viewportPreset ?? "iphone", ...project.editor, selection: [] }
+    };
+  }
+  return project;
 }
 
 function saveStoredProject(project: StudioProject) {
@@ -2167,6 +2762,60 @@ function nodeFromComponent(component: StudioComponent, records: Record<string, S
   };
 }
 
+function ensureComponent(
+  project: StudioProject,
+  id: string,
+  name: string,
+  kind: NodeKindChoice,
+  layout: StudioComponent["layout"],
+  style: StudioComponent["style"],
+  fills: MotionFill[]
+) {
+  if (project.components[id] !== undefined) return id;
+
+  project.components[id] = {
+    id,
+    name,
+    kind,
+    roles: ["actor"],
+    layout: clone(layout ?? defaultLayout(kind)),
+    style: clone(style ?? defaultStyle(kind, name)),
+    fills: clone(fills),
+    presentation: {
+      "offset.x": 0,
+      "offset.y": 0,
+      rotation: 0,
+      scale: 1,
+      opacity: 1
+    }
+  };
+
+  return id;
+}
+
+function createInstanceAt(
+  project: StudioProject,
+  component: StudioComponent,
+  name: string,
+  x: number,
+  y: number,
+  groupRole: string
+) {
+  const node = nodeFromComponent(component, project.nodes, project.rootNodeId);
+  node.name = name;
+  node.roles = uniqueStrings([groupRole, ...node.roles]);
+  node.presentation["offset.x"] = x;
+  node.presentation["offset.y"] = y;
+  project.nodes[node.id] = node;
+  project.nodes[project.rootNodeId]?.childIds.push(node.id);
+
+  for (const role of node.roles) {
+    project.roles[role] ??= { id: role, name: role };
+  }
+
+  return node;
+}
+
 function syncInstancesOfComponent(project: StudioProject, componentId: string) {
   const component = project.components[componentId];
   if (!component) return;
@@ -2179,11 +2828,12 @@ function syncInstancesOfComponent(project: StudioProject, componentId: string) {
 
   for (const node of Object.values(project.nodes)) {
     if (node.componentId !== componentId) continue;
+    const preservedRoles = node.roles.filter((role) => !roles.includes(role) && !role.startsWith("component:"));
     node.kind = kind;
     node.layout = clone(layout);
     node.style = clone(style);
     node.fills = clone(fills);
-    node.roles = [...roles];
+    node.roles = uniqueStrings([...preservedRoles, ...roles]);
   }
 }
 
@@ -2198,6 +2848,31 @@ function visualBackground(style: Record<string, unknown>, kind: NodeKindChoice, 
 
   const angle = numberValue(style.gradientAngle, 135);
   return `linear-gradient(${angle}deg, ${start}, ${end})`;
+}
+
+function visualEffects(style: Record<string, unknown>, scale = 1) {
+  const blur = Math.max(0, numberValue(style.blur, 0) * scale);
+  const strokeWidth = Math.max(0, numberValue(style.strokeWidth, 0) * scale);
+  const shadowBlur = Math.max(0, numberValue(style.shadowBlur, 0) * scale);
+  const shadowX = numberValue(style.shadowX, 0) * scale;
+  const shadowY = numberValue(style.shadowY, 0) * scale;
+  const shadowOpacity = clamp(numberValue(style.shadowOpacity, 0), 0, 1);
+  const shadowColor = String(style.shadowColor ?? "#000000");
+  const effects: React.CSSProperties = {};
+
+  if (blur > 0) {
+    effects.filter = `blur(${round(blur)}px)`;
+  }
+
+  if (strokeWidth > 0) {
+    effects.border = `${round(strokeWidth)}px solid ${String(style.strokeColor ?? "#E0F2FE")}`;
+  }
+
+  if (shadowBlur > 0 || shadowX !== 0 || shadowY !== 0) {
+    effects.boxShadow = `${round(shadowX)}px ${round(shadowY)}px ${round(shadowBlur)}px ${colorWithOpacity(shadowColor, shadowOpacity)}`;
+  }
+
+  return effects;
 }
 
 function fillsFromStyle(style: Record<string, unknown>, kind: NodeKindChoice): MotionFill[] {

@@ -23,15 +23,31 @@ export const orbPlaygroundProject: StudioProject = {
       kind: "circle",
       parentId: "screen",
       childIds: [],
-      roles: ["actor"],
-      layout: { width: 74, height: 74 },
+      roles: ["actor", "component:neonOrb"],
+      layout: { width: 116, height: 116 },
       style: { backgroundColor: "#5ED8FF" },
-      presentation: { "offset.x": 0, "offset.y": 0, rotation: 0, scale: 1, opacity: 1 }
+      fills: [
+        {
+          type: "radialGradient",
+          colors: [
+            { color: "#E0F2FE", position: 0 },
+            { color: "#5ED8FF", position: 0.48 },
+            { color: "#B58CFF", position: 1 }
+          ],
+          centerX: 0.35,
+          centerY: 0.28,
+          radius: 88,
+          opacity: 1
+        }
+      ],
+      presentation: { "offset.x": 0, "offset.y": 0, rotation: 0, scale: 1, opacity: 1 },
+      componentId: "neonOrb"
     }
   },
   roles: {
     screen: { id: "screen", name: "screen" },
-    actor: { id: "actor", name: "actor", description: "Default animated object" }
+    actor: { id: "actor", name: "actor", description: "Default animated object" },
+    "component:neonOrb": { id: "component:neonOrb", name: "component:neonOrb" }
   },
   phases: {
     chargePull: {
@@ -319,7 +335,7 @@ export const orbPlaygroundProject: StudioProject = {
       name: "Neon Orb",
       kind: "circle",
       roles: ["actor"],
-      layout: { width: 74, height: 74 },
+      layout: { width: 116, height: 116 },
       style: {
         backgroundColor: "#5ED8FF",
         gradientEndColor: "#B58CFF",
@@ -369,7 +385,7 @@ export const orbPlaygroundProject: StudioProject = {
     }
   },
   editor: {
-    selection: ["orb"],
+    selection: [],
     viewportPreset: "iphone"
   }
 };
