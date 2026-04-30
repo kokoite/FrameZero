@@ -1319,14 +1319,34 @@ function App() {
         <div className="panel-header">
           <p className="eyebrow">Document</p>
           <h1>{leftPanelTab === "layers" ? "Layers" : "Assets"}</h1>
-          <div className="left-tabs" role="tablist" aria-label="Document panel">
-            <button type="button" className={leftPanelTab === "layers" ? "active" : ""} onClick={() => setLeftPanelTab("layers")}>Layers</button>
-            <button type="button" className={leftPanelTab === "assets" ? "active" : ""} onClick={() => setLeftPanelTab("assets")}>Assets</button>
+          <div className="left-tabs" role="tablist" aria-label="Left sidebar sections">
+            <button
+              type="button"
+              id="left-tab-layers"
+              role="tab"
+              aria-selected={leftPanelTab === "layers"}
+              aria-controls="left-panel-layers"
+              className={leftPanelTab === "layers" ? "active" : ""}
+              onClick={() => setLeftPanelTab("layers")}
+            >
+              Layers
+            </button>
+            <button
+              type="button"
+              id="left-tab-assets"
+              role="tab"
+              aria-selected={leftPanelTab === "assets"}
+              aria-controls="left-panel-assets"
+              className={leftPanelTab === "assets" ? "active" : ""}
+              onClick={() => setLeftPanelTab("assets")}
+            >
+              Assets
+            </button>
           </div>
         </div>
 
         {leftPanelTab === "layers" ? (
-        <>
+        <div role="tabpanel" id="left-panel-layers" aria-labelledby="left-tab-layers">
         <section className="left-section document-layers">
           <div className="section-heading">
             <h2>Layers</h2>
@@ -1365,10 +1385,11 @@ function App() {
             ))}
           </div>
         </section> : null}
-        </>
+        </div>
         ) : null}
 
         {leftPanelTab === "assets" ? (
+        <div role="tabpanel" id="left-panel-assets" aria-labelledby="left-tab-assets">
         <section className="left-section component-library">
           <div className="section-heading">
             <h2>Asset Browser</h2>
@@ -1546,6 +1567,7 @@ function App() {
             })}
           </div>
         </section>
+        </div>
         ) : null}
         <div
           className="panel-resizer left-resizer"
@@ -1645,7 +1667,7 @@ function App() {
             className="phone-canvas"
             onPointerDown={(event) => {
               const target = event.target;
-              if (target instanceof HTMLElement && target.closest(".canvas-node, .canvas-tool-hud, .canvas-side-tools")) return;
+              if (target instanceof HTMLElement && target.closest(".canvas-node")) return;
               clearCanvasSelection();
             }}
             style={{
@@ -1663,13 +1685,6 @@ function App() {
             </div>
             <div className="ruler ruler-left" aria-hidden="true">
               {rulerTicks(canvasHeight).map((tick) => <span key={tick} style={{ top: `${(tick / canvasHeight) * 100}%` }}>{tick}</span>)}
-            </div>
-            <div className="canvas-tool-hud" aria-label="Canvas manipulation tools">
-              <button type="button" className="hud-tool active">Move</button>
-              <button type="button" className="hud-tool live">Resize</button>
-            </div>
-            <div className="canvas-side-tools" aria-label="Selection tools">
-              <button type="button" className="active" aria-label="Select (V)">V</button>
             </div>
             <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
             {renderCanvasChildren(project.rootNodeId, canvasCenter)}
@@ -1699,6 +1714,10 @@ function App() {
             <button
               type="button"
               key={tab}
+              id={`inspector-tab-${tab}`}
+              role="tab"
+              aria-selected={inspectorTab === tab}
+              aria-controls={`inspector-panel-${tab}`}
               className={inspectorTab === tab ? "active" : ""}
               onClick={() => setInspectorTab(tab)}
             >
@@ -1722,7 +1741,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && selectedComponent && inspectorTab === "properties" ? (
-        <section>
+        <section role="tabpanel" id="inspector-panel-properties" aria-labelledby="inspector-tab-properties">
           <div className="section-heading">
             <h2>Main Component</h2>
             {selectedComponent ? <button type="button" className="danger" onClick={deleteSelectedComponent}>Delete Component</button> : null}
@@ -1790,7 +1809,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && selectedComponent && inspectorTab === "effects" ? (
-          <section>
+          <section role="tabpanel" id="inspector-panel-effects" aria-labelledby="inspector-tab-effects">
             <div className="section-heading">
               <h2>Component Effects</h2>
             </div>
@@ -1811,7 +1830,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && !selectedComponent && inspectorTab === "properties" ? (
-        <section>
+        <section role="tabpanel" id="inspector-panel-properties" aria-labelledby="inspector-tab-properties">
           <div className="section-heading">
             <h2>Inspector</h2>
             {selectedNode && selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
@@ -1845,7 +1864,7 @@ function App() {
                 <h3><span>01</span> Identity</h3>
               <div className="form-grid">
                 <label>Name<input value={selectedNode.name} onChange={(event) => updateSelectedNode((node) => { node.name = event.target.value; })} /></label>
-                {showDeveloperOutput ? <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label> : null}
+                <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label>
               </div>
               </div>
               <div className="inspector-group">
@@ -1876,7 +1895,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && !selectedComponent && selectedNode && inspectorTab === "effects" ? (
-          <section>
+          <section role="tabpanel" id="inspector-panel-effects" aria-labelledby="inspector-tab-effects">
             <div className="section-heading">
               <h2>Layer Effects</h2>
               {selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
@@ -1972,7 +1991,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && inspectorTab === "code" ? (
-          <section className="json-section">
+          <section className="json-section" role="tabpanel" id="inspector-panel-code" aria-labelledby="inspector-tab-code">
             <JsonHeader
               copied={copiedJsonLabel === "design"}
               onCopy={() => void copyJson("design", designCodePanel.body)}
