@@ -414,6 +414,10 @@ public final class MotionEngine {
         node.style[property].flatMap(resolveNumber)
     }
 
+    func styleBool(for node: MotionNode, _ property: String) -> Bool {
+        node.style[property]?.boolean ?? false
+    }
+
     func updateViewport(size: CGSize, safeAreaInsets: EdgeInsets) {
         let next = MotionViewport(
             width: Double(size.width),
@@ -1272,6 +1276,7 @@ public final class MotionEngine {
         try validateFiniteNumbers(in: particle.from, context: "particle from values for \(context)")
         try validateFiniteNumbers(in: particle.to, context: "particle to values for \(context)")
         try validateFills(particle.fills, context: "particle fills for \(context)")
+        try validateImageAssetPolicy(kind: particle.kind, style: particle.style, context: "particle for \(context)")
 
         for key in ["backgroundColor", "gradientEndColor"] where particle.style[key] != nil {
             guard let value = particle.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
@@ -1296,7 +1301,7 @@ public final class MotionEngine {
         )
         try requireKeys(
             particle.style,
-            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "cornerRadius"],
+            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "cornerRadius", "assetPolicy", "imageUrl", "contentMode", "blendMode"],
             label: "particle style",
             context: context
         )
@@ -1334,6 +1339,7 @@ public final class MotionEngine {
         try validateFiniteNumbers(in: component.from, context: "component from values for \(context)")
         try validateFiniteNumbers(in: component.to, context: "component to values for \(context)")
         try validateFills(component.fills, context: "component fills for \(context)")
+        try validateImageAssetPolicy(kind: component.kind, style: component.style, context: "component for \(context)")
 
         for key in ["backgroundColor", "foregroundColor", "gradientEndColor"] where component.style[key] != nil {
             guard let value = component.style[key]?.string, MotionRenderStyle.isValidHexColor(value) else {
@@ -1349,7 +1355,7 @@ public final class MotionEngine {
         )
         try requireKeys(
             component.style,
-            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "foregroundColor", "cornerRadius", "text", "font"],
+            areIn: ["backgroundColor", "gradientEndColor", "gradientAngle", "foregroundColor", "cornerRadius", "text", "font", "assetPolicy", "imageUrl", "contentMode", "blendMode"],
             label: "component style",
             context: context
         )
@@ -1716,8 +1722,9 @@ public final class MotionEngine {
 
     private func validateNodeStyle(_ node: MotionNode) throws {
         try validateFills(node.fills, context: "fills for node '\(node.id)'")
+        try validateImageAssetPolicy(kind: node.kind, style: node.style, context: "node '\(node.id)'")
 
-        for key in ["backgroundColor", "foregroundColor", "gradientEndColor"] where node.style[key] != nil {
+        for key in ["backgroundColor", "foregroundColor", "gradientEndColor", "strokeColor", "shadowColor"] where node.style[key] != nil {
             guard let value = node.style[key]?.string else {
                 throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a 6-digit hex color string")
             }
@@ -1729,6 +1736,39 @@ public final class MotionEngine {
 
         if let gradientAngle = node.style["gradientAngle"], gradientAngle.number == nil {
             throw MotionRuntimeError.validation("Style 'gradientAngle' for node '\(node.id)' must be a number")
+        }
+
+        let numericStyleKeys = [
+            "blur",
+            "figmaBlur",
+            "strokeWidth",
+            "shadowX",
+            "shadowY",
+            "shadowBlur",
+            "shadowOpacity",
+            "shapeBounds",
+            "shapeBounds.top",
+            "shapeBounds.right",
+            "shapeBounds.bottom",
+            "shapeBounds.left",
+            "effectBounds",
+            "effectBounds.top",
+            "effectBounds.right",
+            "effectBounds.bottom",
+            "effectBounds.left"
+        ]
+
+        for key in numericStyleKeys where node.style[key] != nil {
+            guard node.style[key]?.number != nil else {
+                throw MotionRuntimeError.validation("Style '\(key)' for node '\(node.id)' must be a number")
+            }
+        }
+    }
+
+    private func validateImageAssetPolicy(kind: MotionNodeKind, style: [String: MotionValue], context: String) throws {
+        guard kind == .image else { return }
+        guard style["assetPolicy"]?.string == "locked" else {
+            throw MotionRuntimeError.validation("Image \(context) requires style.assetPolicy = 'locked'")
         }
     }
 

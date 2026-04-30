@@ -39,6 +39,33 @@ final class MotionRenderPolicyTests: XCTestCase {
         }
     }
 
+    func testRendererUsesCanvasForTransformedRadialGradients() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let rendererURL = packageRoot.appendingPathComponent("Sources/MotionEngineKit/MotionRenderer.swift")
+        let source = try String(contentsOf: rendererURL)
+
+        XCTAssertTrue(source.contains("Canvas"), "Transformed radial fills should use Canvas instead of lossy RadialGradient center-only rendering.")
+        XCTAssertTrue(source.contains("needsCanvasRadialFill"), "Renderer should route transformed radial fills through the Canvas path.")
+        XCTAssertTrue(source.contains("concatenate(transform)"), "Renderer should apply the Figma-style gradient transform to Canvas drawing.")
+    }
+
+    func testRendererMapsBlendAndIsolationPolicy() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let rendererURL = packageRoot.appendingPathComponent("Sources/MotionEngineKit/MotionRenderer.swift")
+        let source = try String(contentsOf: rendererURL)
+
+        XCTAssertTrue(source.contains("case \"screen\""))
+        XCTAssertTrue(source.contains("case \"plusLighter\""))
+        XCTAssertTrue(source.contains("case \"colorDodge\""))
+        XCTAssertTrue(source.contains(".compositingGroup()"), "Group opacity should be isolated before opacity and blend modifiers are applied.")
+    }
+
     @MainActor
     func testFailedLoadRestoresPreviousEngineState() throws {
         let engine = MotionEngine()
@@ -83,6 +110,114 @@ final class MotionRenderPolicyTests: XCTestCase {
     }
 
     @MainActor
+    func testAcceptsNodeVisualEffectStyles() throws {
+        let json = validDocument(
+            nodes: """
+            [
+              {
+                "id": "root",
+                "kind": "roundedRectangle",
+                "roles": [],
+                "layout": { "width": 120, "height": 80 },
+                "style": {
+                  "backgroundColor": "#38BDF8",
+                  "figmaBlur": 24,
+                  "strokeWidth": 2,
+                  "strokeColor": "#E0F2FE",
+                  "shadowX": 4,
+                  "shadowY": 8,
+                  "shadowBlur": 18,
+                  "shadowColor": "#000000",
+                  "shadowOpacity": 0.35,
+                  "shapeBounds": 12,
+                  "effectBounds.top": 20,
+                  "effectBounds.right": 18,
+                  "effectBounds.bottom": 20,
+                  "effectBounds.left": 18
+                },
+                "presentation": {},
+                "children": []
+              }
+            ]
+            """
+        )
+
+        XCTAssertNoThrow(try MotionEngine().load(jsonString: json))
+    }
+
+    @MainActor
+    func testRejectsUnlockedImageNodes() {
+        assertInvalidDocument(
+            nodes: """
+            [
+              { "id": "root", "kind": "zstack", "roles": [], "layout": {}, "style": {}, "presentation": {}, "children": ["asset"] },
+              { "id": "asset", "kind": "image", "roles": [], "layout": { "width": 120, "height": 80 }, "style": { "imageUrl": "/figma/voice/planet-3.svg" }, "presentation": {}, "children": [] }
+            ]
+            """,
+            contains: "assetPolicy"
+        )
+    }
+
+    @MainActor
+    func testAcceptsLockedImageNodes() throws {
+        let json = validDocument(
+            nodes: """
+            [
+              { "id": "root", "kind": "zstack", "roles": [], "layout": {}, "style": {}, "presentation": {}, "children": ["asset"] },
+              { "id": "asset", "kind": "image", "roles": [], "layout": { "width": 120, "height": 80 }, "style": { "assetPolicy": "locked", "imageUrl": "/figma/voice/planet-3.svg" }, "presentation": {}, "children": [] }
+            ]
+            """
+        )
+
+        XCTAssertNoThrow(try MotionEngine().load(jsonString: json))
+    }
+
+    @MainActor
+    func testAcceptsClipAndSupportedBlendModes() throws {
+        let json = validDocument(
+            nodes: """
+            [
+              { "id": "root", "kind": "zstack", "roles": [], "layout": { "width": 160, "height": 120 }, "style": { "clip": true }, "presentation": {}, "children": ["screen", "lighten", "dodge"] },
+              { "id": "screen", "kind": "circle", "roles": [], "layout": { "width": 40, "height": 40 }, "style": { "blendMode": "screen" }, "fills": [{ "type": "solid", "color": "#38BDF8" }], "presentation": {}, "children": [] },
+              { "id": "lighten", "kind": "circle", "roles": [], "layout": { "width": 40, "height": 40 }, "style": { "blendMode": "plusLighter" }, "fills": [{ "type": "solid", "color": "#B58CFF" }], "presentation": {}, "children": [] },
+              { "id": "dodge", "kind": "circle", "roles": [], "layout": { "width": 40, "height": 40 }, "style": { "blendMode": "colorDodge" }, "fills": [{ "type": "solid", "color": "#E0F2FE" }], "presentation": {}, "children": [] }
+            ]
+            """
+        )
+
+        XCTAssertNoThrow(try MotionEngine().load(jsonString: json))
+    }
+
+    @MainActor
+    func testAcceptsVectorPathNodeStyle() throws {
+        let json = validDocument(
+            nodes: """
+            [
+              {
+                "id": "root",
+                "kind": "path",
+                "roles": [],
+                "layout": { "width": 94.147, "height": 120.008 },
+                "style": {
+                  "backgroundColor": "#8320DA",
+                  "pathData": "M 94.1469 34.4752 C 94.1469 53.5153 51.0265 120.0085 25.0298 120.0085 Z",
+                  "viewBoxWidth": 94.147,
+                  "viewBoxHeight": 120.008,
+                  "blur": 50,
+                  "blendMode": "plusLighter"
+                },
+                "fills": [{ "type": "solid", "color": "#8320DA", "opacity": 1 }],
+                "presentation": { "offset.x": -150.36, "offset.y": 7.06, "opacity": 0.35, "scale": 1, "scale.y": -1, "rotation": -75 },
+                "children": []
+              }
+            ]
+            """
+        )
+
+        XCTAssertNoThrow(try MotionEngine().load(jsonString: json))
+    }
+
+    @MainActor
     func testAcceptsStructuredNodeFills() throws {
         let engine = MotionEngine()
         try engine.load(jsonString: validDocument(
@@ -104,6 +239,7 @@ final class MotionRenderPolicyTests: XCTestCase {
                     ],
                     "centerX": 0.35,
                     "centerY": 0.28,
+                    "gradientTransform": [0, 308.67, -591.426, -2.6306, 245.55, -13.9789],
                     "radius": 90,
                     "opacity": 0.92
                   }
@@ -119,6 +255,44 @@ final class MotionRenderPolicyTests: XCTestCase {
         XCTAssertEqual(node.fills.count, 1)
         XCTAssertEqual(node.fills[0].type, .radialGradient)
         XCTAssertEqual(node.fills[0].colors.count, 3)
+        XCTAssertEqual(node.fills[0].gradientTransform?.count, 6)
+    }
+
+    @MainActor
+    func testRejectsInvalidGradientTransform() {
+        let json = validDocument(
+            nodes: """
+            [
+              {
+                "id": "root",
+                "kind": "roundedRectangle",
+                "roles": [],
+                "layout": {},
+                "style": {},
+                "fills": [
+                  {
+                    "type": "radialGradient",
+                    "colors": [
+                      { "color": "#E0F2FE", "position": 0 },
+                      { "color": "#38BDF8", "position": 1 }
+                    ],
+                    "gradientTransform": [0, 1, 2]
+                  }
+                ],
+                "presentation": {},
+                "children": []
+              }
+            ]
+            """
+        )
+
+        XCTAssertThrowsError(try JSONDecoder().decode(MotionDocument.self, from: Data(json.utf8))) { error in
+            guard case let DecodingError.dataCorrupted(context) = error else {
+                return XCTFail("Expected dataCorrupted error, got \(error)")
+            }
+
+            XCTAssertTrue(context.debugDescription.contains("Gradient transform"))
+        }
     }
 
     @MainActor

@@ -10,8 +10,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-
+  swift:
     runs-on: macos-latest
     defaults:
       run:
@@ -23,3 +22,27 @@ jobs:
       run: swift build -v
     - name: Run tests
       run: swift test -v
+
+  studio:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Enable Corepack
+      run: corepack enable
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: "pnpm"
+        cache-dependency-path: FrameZeroStudio/pnpm-lock.yaml
+    - name: Install Studio dependencies
+      run: pnpm --dir FrameZeroStudio install --frozen-lockfile
+    - name: Install visual test dependencies
+      run: |
+        python3 -m pip install -r FrameZeroStudio/apps/studio-web/scripts/requirements-visual.txt
+        python3 -m playwright install chromium
+    - name: Run Studio tests
+      run: pnpm --dir FrameZeroStudio test
+    - name: Build Studio
+      run: pnpm --dir FrameZeroStudio build

@@ -105,6 +105,7 @@ public struct MotionEffectsOverlay: View {
                 componentView(
                     kind: component.kind,
                     text: text,
+                    imageURL: string(component.style["imageUrl"]),
                     backgroundStyle: MotionRenderStyle.fillStyle(fills: component.fills, fallbackStyle: component.style),
                     foregroundColor: foregroundColor,
                     cornerRadius: cornerRadius
@@ -126,7 +127,7 @@ public struct MotionEffectsOverlay: View {
             Circle().fill(backgroundStyle)
         case .roundedRectangle:
             RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
-        case .zstack, .vstack, .hstack, .text:
+        case .zstack, .vstack, .hstack, .text, .image, .path:
             Circle().fill(backgroundStyle)
         }
     }
@@ -135,6 +136,7 @@ public struct MotionEffectsOverlay: View {
     private func componentView(
         kind: MotionNodeKind,
         text: String,
+        imageURL: String?,
         backgroundStyle: AnyShapeStyle,
         foregroundColor: Color,
         cornerRadius: Double
@@ -142,7 +144,7 @@ public struct MotionEffectsOverlay: View {
         switch kind {
         case .circle:
             Circle().fill(backgroundStyle)
-        case .roundedRectangle, .zstack, .vstack, .hstack:
+        case .roundedRectangle, .zstack, .vstack, .hstack, .path:
             RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
         case .text:
             Text(text)
@@ -151,6 +153,16 @@ public struct MotionEffectsOverlay: View {
                 .background {
                     Rectangle().fill(backgroundStyle)
                 }
+        case .image:
+            if let urlString = imageURL, let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Rectangle().fill(backgroundStyle)
+                }
+            } else {
+                Rectangle().fill(backgroundStyle)
+            }
         }
     }
 

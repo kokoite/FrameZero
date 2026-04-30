@@ -94,6 +94,7 @@ struct MotionFill: Decodable, Equatable {
     let centerX: Double?
     let centerY: Double?
     let radius: Double?
+    let gradientTransform: [Double]?
     let opacity: Double?
 
     private enum CodingKeys: String, CodingKey {
@@ -104,6 +105,7 @@ struct MotionFill: Decodable, Equatable {
         case centerX
         case centerY
         case radius
+        case gradientTransform
         case opacity
     }
 
@@ -116,7 +118,14 @@ struct MotionFill: Decodable, Equatable {
         centerX = try container.decodeFiniteDoubleIfPresent(forKey: .centerX)
         centerY = try container.decodeFiniteDoubleIfPresent(forKey: .centerY)
         radius = try container.decodeFinitePositiveDoubleIfPresent(forKey: .radius)
+        gradientTransform = try container.decodeIfPresent([Double].self, forKey: .gradientTransform)
         opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+
+        if let gradientTransform {
+            guard gradientTransform.count == 6, gradientTransform.allSatisfy(\.isFinite) else {
+                throw DecodingError.dataCorruptedError(forKey: .gradientTransform, in: container, debugDescription: "Gradient transform must contain six finite numbers")
+            }
+        }
 
         if let opacity, opacity > 1 {
             throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Fill opacity must be between 0 and 1")
@@ -172,6 +181,8 @@ enum MotionNodeKind: String, Decodable {
     case vstack
     case hstack
     case text
+    case image
+    case path
     case circle
     case roundedRectangle
 }
@@ -836,6 +847,11 @@ enum MotionValue: Decodable, Equatable {
 
     var string: String? {
         guard case let .string(value) = self else { return nil }
+        return value
+    }
+
+    var boolean: Bool? {
+        guard case let .bool(value) = self else { return nil }
         return value
     }
 }
