@@ -217,7 +217,7 @@ label {
 }
 
 .toolbar-group button {
-  min-height: 24px;
+  min-height: 32px;
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.035);
   padding: 3px 10px;
@@ -261,7 +261,7 @@ label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
+  min-height: 40px;
   flex: 0 0 auto;
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -272,9 +272,9 @@ label {
 .preview-background-switch button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 22px;
-  min-height: 22px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.035);
@@ -404,7 +404,7 @@ label {
 }
 
 .inspector-tabs button {
-  min-height: 25px;
+  min-height: 32px;
   border-color: transparent;
   background: transparent;
   color: rgba(220, 226, 240, 0.58);
@@ -458,7 +458,7 @@ label {
 }
 
 .left-tabs button {
-  min-height: 24px;
+  min-height: 32px;
   border-color: transparent;
   background: transparent;
   color: rgba(220, 226, 240, 0.58);
@@ -650,7 +650,7 @@ section {
 }
 
 .component-create-heading button {
-  min-height: 22px;
+  min-height: 32px;
   padding: 0 7px;
   border-color: rgba(94, 216, 255, 0.28);
   background: rgba(94, 216, 255, 0.08);
@@ -787,7 +787,7 @@ section {
 }
 
 .left-panel .button-grid button {
-  min-height: 24px;
+  min-height: 32px;
   padding: 3px 6px;
   font-size: 11.5px;
   font-weight: 520;
@@ -1079,10 +1079,10 @@ section {
 
 .mini-action {
   width: 100%;
-  min-height: 23px;
+  min-height: 32px;
   border: 1px solid rgba(142, 167, 255, 0.42);
   border-radius: 3px;
-  padding: 2px 5px;
+  padding: 4px 6px;
   background: rgba(142, 167, 255, 0.18);
   color: #eef2ff;
   font-size: 8.5px;
@@ -1579,8 +1579,8 @@ section {
 .canvas-side-tools button {
   display: grid;
   place-items: center;
-  width: 24px;
-  min-height: 24px;
+  width: 32px;
+  min-height: 32px;
   padding: 0;
   border-color: transparent;
   background: transparent;
@@ -2477,7 +2477,8 @@ pre::-webkit-scrollbar-thumb:hover {
   }
 
   .preview-background-switch button {
-    width: 23px;
+    width: 32px;
+    min-height: 32px;
   }
 
   .preview-background-swatch {
