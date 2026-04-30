@@ -315,15 +315,19 @@ public final class MotionEngine {
     }
 
     public func load(data: Data) throws {
-        let decoded = try JSONDecoder().decode(MotionDocument.self, from: data)
         let snapshot = snapshot()
 
         do {
+            let migrated = try MotionMigration.migrate(data: data)
+            let decoded = try JSONDecoder().decode(MotionDocument.self, from: migrated)
             try install(decoded)
             editableDocumentURL = nil
             lastLoadedModificationDate = nil
             hotReloadPath = nil
             statusMessage = "Loaded motion document"
+        } catch let migrationError as MotionMigrationError {
+            restore(snapshot)
+            throw mapMigrationError(migrationError)
         } catch {
             restore(snapshot)
             throw error
@@ -340,10 +344,11 @@ public final class MotionEngine {
 
     public func load(fileURL: URL, hotReload: Bool = false) throws {
         let data = try Data(contentsOf: fileURL)
-        let decoded = try JSONDecoder().decode(MotionDocument.self, from: data)
         let snapshot = snapshot()
 
         do {
+            let migrated = try MotionMigration.migrate(data: data)
+            let decoded = try JSONDecoder().decode(MotionDocument.self, from: migrated)
             try install(decoded)
 
             if hotReload {
@@ -359,6 +364,9 @@ public final class MotionEngine {
             }
 
             statusMessage = "Loaded \(fileURL.lastPathComponent)"
+        } catch let migrationError as MotionMigrationError {
+            restore(snapshot)
+            throw mapMigrationError(migrationError)
         } catch {
             restore(snapshot)
             throw error
@@ -943,16 +951,32 @@ public final class MotionEngine {
 
         do {
             let data = try Data(contentsOf: editableDocumentURL)
-            let decoded = try JSONDecoder().decode(MotionDocument.self, from: data)
+            let migrated = try MotionMigration.migrate(data: data)
+            let decoded = try JSONDecoder().decode(MotionDocument.self, from: migrated)
             try install(decoded)
             lastLoadedModificationDate = try editableDocumentURL
                 .resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate
             statusMessage = "Loaded \(editableDocumentURL.lastPathComponent)"
+        } catch let migrationError as MotionMigrationError {
+            restore(snapshot)
+            errorMessage = mapMigrationError(migrationError).localizedDescription
+            statusMessage = "Hot reload failed"
         } catch {
             restore(snapshot)
             errorMessage = error.localizedDescription
             statusMessage = "Hot reload failed"
+        }
+    }
+
+    private func mapMigrationError(_ error: MotionMigrationError) -> MotionRuntimeError {
+        switch error {
+        case .malformedJSON:
+            return .validation("malformed JSON document")
+        case .nonObjectRoot:
+            return .validation("document root must be a JSON object")
+        case .unsupportedFutureVersion(let v):
+            return .validation("unsupported schema version \(v); upgrade required")
         }
     }
 
