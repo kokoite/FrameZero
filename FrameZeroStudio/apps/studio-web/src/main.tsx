@@ -1868,7 +1868,7 @@ function App() {
               </div>
               </div>
               <div className="inspector-group">
-                <h3><span>02</span> Transform</h3>
+                <h3><span>02</span> Transform{nodeUsedInAnimation(project, selectedNode.id) ? <span className="rest-label"> · rest pose</span> : null}</h3>
                 <div className="form-grid">
                 <NumberField label="Frame X" value={nodeFrameX(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameX(node, value); })} />
                 <NumberField label="Frame Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
@@ -1926,11 +1926,16 @@ function App() {
                 </div>
               </div>
               <NumberField label="Start Delay" value={selectedPhase.startDelay} step={0.05} onChange={(value) => updateSelectedPhase((phase) => { phase.startDelay = value; })} />
-              <NumberField label="Next At" value={selectedPhase.nextAt ?? 1} step={0.05} onChange={(value) => updateSelectedPhase((phase) => {
-                phase.nextMode = "atTime";
-                phase.nextAt = value;
-              })} />
-              <button type="button" onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "afterPreviousSettles"; phase.nextAt = null; })}>Next after settle</button>
+              <div className="field-block field-wide">
+                <span>Next Phase</span>
+                <div className="segmented-row compact two-up">
+                  <button type="button" className={selectedPhase.nextMode === "atTime" ? "segment active" : "segment"} aria-pressed={selectedPhase.nextMode === "atTime"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "atTime"; if (phase.nextAt == null) phase.nextAt = 1; })}>At Time</button>
+                  <button type="button" className={selectedPhase.nextMode === "afterPreviousSettles" ? "segment active" : "segment"} aria-pressed={selectedPhase.nextMode === "afterPreviousSettles"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "afterPreviousSettles"; phase.nextAt = null; })}>After Settle</button>
+                </div>
+              </div>
+              {selectedPhase.nextMode === "atTime" ? (
+                <NumberField label="Next At" value={selectedPhase.nextAt ?? 1} step={0.05} onChange={(value) => updateSelectedPhase((phase) => { phase.nextAt = value; })} />
+              ) : null}
             </div>
 
             <div className="control-cluster">
@@ -2022,7 +2027,7 @@ function App() {
               <span>{selectionKind(project, selectedNode)} · {selectedNode?.kind ?? "none"}</span>
             </div>
             {selectedNode ? (
-              <div className="quick-transform" aria-label="Quick transform controls">
+              <div className="quick-transform" aria-label={nodeUsedInAnimation(project, selectedNode.id) ? "Rest pose controls — sets position before animation plays" : "Quick transform controls"}>
                 <NumberField label="X" value={nodeFrameX(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameX(node, value); })} />
                 <NumberField label="Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
                 <NumberField label="W" value={nodeWidth(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.width = value; })} />
