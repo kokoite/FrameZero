@@ -1309,17 +1309,7 @@ function App() {
           <button type="button" className="primary" onClick={sendToSimulator} disabled={sendState === "sending"}>
             {sendState === "sending" ? "Sending" : "Send to Simulator"}
           </button>
-          <span
-            className={`bridge-message ${simulatorStatusClass}`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              minHeight: 28,
-              margin: 0,
-              padding: "0 9px",
-              whiteSpace: "nowrap"
-            }}
-          >
+          <span className={`bridge-message ${simulatorStatusClass}`}>
             {simulatorStatusMessage}
           </span>
         </div>

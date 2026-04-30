@@ -1933,9 +1933,12 @@ section {
 }
 
 .toolbar-actions .bridge-message {
+  display: flex;
+  align-items: center;
   grid-column: auto;
   flex: 1 1 150px;
   max-width: 210px;
+  min-width: 0;
   min-height: 28px;
   padding: 5px 8px;
   overflow: hidden;
