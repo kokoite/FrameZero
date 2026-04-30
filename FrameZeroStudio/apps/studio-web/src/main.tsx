@@ -1669,7 +1669,7 @@ function App() {
               <button type="button" className="hud-tool live">Resize</button>
             </div>
             <div className="canvas-side-tools" aria-label="Selection tools">
-              <button type="button" className="active">V</button>
+              <button type="button" className="active" aria-label="Select (V)">V</button>
             </div>
             <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
             {renderCanvasChildren(project.rootNodeId, canvasCenter)}
@@ -1690,24 +1690,22 @@ function App() {
           aria-orientation="vertical"
           onPointerDown={(event) => startPanelResize("right", event)}
         />
-        {workspaceMode === "design" ? (
-          <div className="inspector-tabs" role="tablist" aria-label="Inspector sections">
-            {[
-              ["properties", "Properties"] as const,
-              ["effects", "Effects"] as const,
-              ...(showDeveloperOutput ? [["code", "Code"] as const] : [])
-            ].map(([tab, label]) => (
-              <button
-                type="button"
-                key={tab}
-                className={inspectorTab === tab ? "active" : ""}
-                onClick={() => setInspectorTab(tab)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="inspector-tabs" role="tablist" aria-label="Inspector sections">
+          {[
+            ["properties", "Properties"] as const,
+            ["effects", "Effects"] as const,
+            ...(showDeveloperOutput ? [["code", "Code"] as const] : [])
+          ].map(([tab, label]) => (
+            <button
+              type="button"
+              key={tab}
+              className={inspectorTab === tab ? "active" : ""}
+              onClick={() => setInspectorTab(tab)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {workspaceMode === "animate" ? (
         <section className="action-strip">
@@ -2010,7 +2008,7 @@ function App() {
                 <NumberField label="Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
                 <NumberField label="W" value={nodeWidth(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.width = value; })} />
                 <NumberField label="H" value={nodeHeight(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.height = value; })} />
-                <NumberField label="O" value={numberValue(selectedNode.presentation.opacity, 1)} step={0.05} onChange={(value) => updateSelectedNode((node) => { node.presentation.opacity = clamp(value, 0, 1); })} />
+                <NumberField label="Op" value={numberValue(selectedNode.presentation.opacity, 1)} step={0.05} onChange={(value) => updateSelectedNode((node) => { node.presentation.opacity = clamp(value, 0, 1); })} />
               </div>
             ) : (
               <div className="status-metrics">
