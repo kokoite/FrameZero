@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   compileStudioProject,
@@ -17,6 +17,27 @@ type SendState = "idle" | "sending" | "sent" | "failed";
 type WorkspaceMode = "design" | "animate";
 type InspectorTab = "properties" | "effects" | "code";
 type LeftPanelTab = "layers" | "assets";
+type PresetAssetId = "hotelActiveGradient" | "hotelActiveGradientTall" | "hotelGradient" | "voiceGradient" | "hotelPlanetTwo" | "hotelPlanetOne";
+type AssetSelection =
+  | { type: "preset"; id: PresetAssetId }
+  | { type: "component"; id: string }
+  | { type: "layer"; componentId: string; nodeId: string };
+type CanvasPreviewBackground = "device" | "checker" | "black" | "white";
+type BridgeHealth = {
+  ok: boolean;
+  revision: number | null;
+  previewClients: number;
+  checkedAt: number;
+};
+type PresetAsset = {
+  id: PresetAssetId;
+  name: string;
+  meta: string;
+  swatchClass: string;
+  ariaLabel: string;
+  badges: string[];
+  place: () => void;
+};
 type ResizeCorner = "n" | "e" | "s" | "w" | "nw" | "ne" | "sw" | "se";
 type PreviewTransform = {
   x: number;
@@ -107,6 +128,12 @@ const canvasWidth = 600;
 const canvasHeight = 400;
 const canvasCenter = { x: canvasWidth / 2, y: canvasHeight / 2 };
 const transformProperties: MotionPropertySelector["properties"] = ["offset.x", "offset.y", "rotation", "scale", "opacity"];
+const previewBackgroundOptions: ReadonlyArray<{ id: CanvasPreviewBackground; label: string }> = [
+  { id: "device", label: "Device" },
+  { id: "checker", label: "Checker" },
+  { id: "black", label: "Black" },
+  { id: "white", label: "White" }
+] as const;
 
 function App() {
   const [project, setProject] = useState<StudioProject>(() => loadStoredProject());
@@ -119,10 +146,16 @@ function App() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [selectedComponentId, setSelectedComponentId] = useState("");
+  const [selectedAsset, setSelectedAsset] = useState<AssetSelection | undefined>();
+  const [focusedLayerId, setFocusedLayerId] = useState("");
   const [showDeveloperOutput, setShowDeveloperOutput] = useState(false);
+  const [copiedJsonLabel, setCopiedJsonLabel] = useState("");
+  const [componentSearch, setComponentSearch] = useState("");
+  const [canvasPreviewBackground, setCanvasPreviewBackground] = useState<CanvasPreviewBackground>("device");
+  const [bridgeHealth, setBridgeHealth] = useState<BridgeHealth | undefined>();
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("properties");
   const [leftPanelTab, setLeftPanelTab] = useState<LeftPanelTab>("layers");
-  const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadStoredPanelWidth(leftPanelWidthStorageKey, 180, 148, 320));
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => loadStoredPanelWidth(leftPanelWidthStorageKey, 268, 220, 420));
   const [rightPanelWidth, setRightPanelWidth] = useState(() => loadStoredPanelWidth(rightPanelWidthStorageKey, 280, 248, 420));
 
   const compileResult = useMemo(() => {
@@ -135,7 +168,32 @@ function App() {
 
   const selectedNode = project.nodes[selectedNodeId];
   const selectedComponent = project.components[selectedComponentId];
+  const selectedComponentIsLayered = selectedComponent?.nodes !== undefined;
   const selectedPhase = project.phases[selectedPhaseId] ?? project.phases[project.phaseOrder[0] ?? ""];
+  const focusedLayer = focusedLayerId ? project.nodes[focusedLayerId] : undefined;
+  const focusedPreviewRootId = focusedLayer ? topCanvasAncestorId(project, focusedLayer.id) : undefined;
+  const runtimeBackgroundColor = rootBackgroundColor(project);
+  const previewBackgroundStyle = canvasPreviewBackgroundStyle(canvasPreviewBackground, runtimeBackgroundColor);
+  const bridgeStatus = bridgeStatusView(bridgeHealth);
+  const simulatorStatusMessage = sendState === "idle" ? bridgeStatus.message : bridgeMessage;
+  const simulatorStatusClass = sendState === "sent" && simulatorStatusMessage.includes("no simulator")
+    ? "warning"
+    : sendState !== "idle"
+      ? sendState
+      : bridgeStatus.kind === "connected"
+        ? "sent"
+        : bridgeStatus.kind === "offline"
+          ? "failed"
+          : bridgeStatus.kind === "no-client"
+            ? "warning"
+            : "";
+  const componentSearchResults = componentLibraryItems(project, componentSearch);
+  const designCodePanel = buildDesignCodePanel(
+    project,
+    selectedNode,
+    selectedComponent,
+    compileResult.ok ? compileResult.value.json : compileResult.error
+  );
   const phaseTargets = selectedPhase ? readPhaseTargets(selectedPhase, selectedNode, targetMode) : defaultPhaseTargets();
   const activeSelector = selectedNode ? selectorForTarget(project, selectedNode, targetMode) : undefined;
   const phaseRule = selectedPhase && activeSelector
@@ -199,6 +257,46 @@ function App() {
     window.localStorage.setItem(rightPanelWidthStorageKey, String(rightPanelWidth));
   }, [rightPanelWidth]);
 
+  useEffect(() => {
+    if (leftPanelTab !== "layers") return;
+    window.requestAnimationFrame(() => {
+      document.querySelector(".layer-row.selected")?.scrollIntoView({ block: "nearest" });
+    });
+  }, [leftPanelTab, selectedNodeId]);
+
+  useEffect(() => {
+    if (inspectorTab === "code" && !showDeveloperOutput) {
+      setInspectorTab("properties");
+    }
+  }, [inspectorTab, showDeveloperOutput]);
+
+  useEffect(() => {
+    let active = true;
+    async function pollBridgeHealth() {
+      try {
+        const response = await fetch("http://127.0.0.1:8787/health");
+        const result = await response.json() as { ok?: boolean; revision?: number; previewClients?: number };
+        if (!active) return;
+        setBridgeHealth({
+          ok: response.ok && result.ok !== false,
+          revision: typeof result.revision === "number" ? result.revision : null,
+          previewClients: typeof result.previewClients === "number" ? result.previewClients : 0,
+          checkedAt: Date.now()
+        });
+      } catch {
+        if (!active) return;
+        setBridgeHealth({ ok: false, revision: null, previewClients: 0, checkedAt: Date.now() });
+      }
+    }
+
+    void pollBridgeHealth();
+    const interval = window.setInterval(() => void pollBridgeHealth(), 2500);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   function patchProject(updater: (draft: StudioProject) => void) {
     setProject((current) => {
       const draft = cloneProject(current);
@@ -219,7 +317,7 @@ function App() {
         parentId: draft.rootNodeId,
         childIds: [],
         roles: ["actor"],
-        layout: kind === "text" ? {} : { width: kind === "circle" ? 62 : 130, height: kind === "circle" ? 62 : 82 },
+        layout: defaultLayout(kind),
         style: defaultStyle(kind, name),
         fills: defaultFills(kind),
         presentation: {
@@ -237,6 +335,7 @@ function App() {
       draft.editor = { selection: [id], viewportPreset: "iphone" };
       setSelectedNodeId(id);
       setSelectedComponentId("");
+      setSelectedAsset(undefined);
     });
   }
 
@@ -262,6 +361,7 @@ function App() {
       draft.nodes[draft.rootNodeId]?.childIds.push(id);
       setSelectedNodeId(id);
       setSelectedComponentId("");
+      setSelectedAsset(undefined);
     });
   }
 
@@ -272,6 +372,7 @@ function App() {
       const component = defaultComponent(id, name, kind);
       draft.components[id] = component;
       setSelectedComponentId(id);
+      setSelectedAsset({ type: "component", id });
       setSelectedNodeId(draft.rootNodeId);
     });
   }
@@ -284,6 +385,7 @@ function App() {
       const id = uniqueId(slug(source.name || "component"), draft.components);
       draft.components[id] = componentFromNode(id, source);
       setSelectedComponentId(id);
+      setSelectedAsset({ type: "component", id });
       setSelectedNodeId(draft.rootNodeId);
     });
   }
@@ -299,7 +401,9 @@ function App() {
         id,
         name: `${source.name} Copy`
       };
+      retargetComponentTemplateRoles(draft.components[id] as StudioComponent, source.id, id);
       setSelectedComponentId(id);
+      setSelectedAsset({ type: "component", id });
       setSelectedNodeId(draft.rootNodeId);
     });
   }
@@ -321,7 +425,30 @@ function App() {
     patchProject((draft) => {
       const component = draft.components[componentId];
       if (!component) return;
-      const node = nodeFromComponent(component, draft.nodes, draft.rootNodeId);
+      const node = component.nodes !== undefined && component.rootNodeId !== undefined
+        ? instantiateLayeredComponent(draft, component)
+        : nodeFromComponent(component, draft.nodes, draft.rootNodeId);
+      if (component.nodes === undefined || component.rootNodeId === undefined) {
+        draft.nodes[node.id] = node;
+        draft.nodes[draft.rootNodeId]?.childIds.push(node.id);
+      }
+      for (const role of node.roles) {
+        draft.roles[role] ??= { id: role, name: role };
+      }
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+    });
+  }
+
+  function instantiateComponentLayer(componentId: string, templateNodeId: string) {
+    patchProject((draft) => {
+      const component = draft.components[componentId];
+      const template = component?.nodes?.[templateNodeId];
+      if (!component || !template) return;
+
+      const node = nodeFromTemplateLayer(component, template, draft.nodes, draft.rootNodeId);
       draft.nodes[node.id] = node;
       draft.nodes[draft.rootNodeId]?.childIds.push(node.id);
       for (const role of node.roles) {
@@ -330,7 +457,129 @@ function App() {
       draft.editor = { selection: [node.id], viewportPreset: "iphone" };
       setSelectedNodeId(node.id);
       setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId(node.id);
+      setLeftPanelTab("layers");
     });
+  }
+
+  function createVoiceGradientComponent() {
+    patchProject((draft) => {
+      const componentId = "voiceGradient";
+      const component = voiceGradientComponent(componentId);
+      const node = replaceLayeredPresetInstance(draft, component);
+      if (!draft.phaseOrder.some((phaseId) => draft.phases[phaseId]?.targets.some((target) => target.select.role === "voiceGradient"))) {
+        const previewPhaseId = addVoiceGradientPreviewPhases(draft);
+        setSelectedPhaseId(previewPhaseId);
+      }
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setLeftPanelTab("layers");
+      setInspectorTab("properties");
+    });
+  }
+
+  function setPreviewBackground(mode: CanvasPreviewBackground) {
+    setCanvasPreviewBackground(mode);
+  }
+
+  function createHotelPlanetOneComponent() {
+    patchProject((draft) => {
+      const componentId = "hotelPlanetOne";
+      const component = hotelPlanetOneComponent(componentId);
+      const node = replaceLayeredPresetInstance(draft, component);
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId(node.id);
+      setLeftPanelTab("assets");
+      setInspectorTab("properties");
+    });
+  }
+
+  function createHotelPlanetTwoComponent() {
+    patchProject((draft) => {
+      const componentId = "hotelPlanetTwo";
+      const component = hotelPlanetTwoComponent(componentId);
+      const node = replaceLayeredPresetInstance(draft, component);
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId(node.id);
+      setLeftPanelTab("assets");
+      setInspectorTab("properties");
+    });
+  }
+
+  function createHotelGradientComponent() {
+    patchProject((draft) => {
+      const componentId = "hotelGradient";
+      const component = hotelGradientComponent(componentId);
+      removeStarterOrbFromCanvas(draft);
+      const node = replaceLayeredPresetInstance(draft, component);
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId("");
+      setLeftPanelTab("layers");
+      setInspectorTab("properties");
+    });
+  }
+
+  function createHotelActiveGradientComponent() {
+    patchProject((draft) => {
+      const componentId = "hotelActiveGradient";
+      const component = hotelActiveGradientComponent(componentId);
+      removeStarterOrbFromCanvas(draft);
+      const node = replaceLayeredPresetInstance(draft, component);
+      const root = draft.nodes[draft.rootNodeId];
+      if (root) root.style.backgroundColor = "#FFFFFF";
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId("");
+      setLeftPanelTab("layers");
+      setInspectorTab("properties");
+    });
+  }
+
+  function createHotelActiveGradientTallComponent() {
+    patchProject((draft) => {
+      const componentId = "hotelActiveGradientTall";
+      const component = hotelActiveGradientTallComponent(componentId);
+      removeStarterOrbFromCanvas(draft);
+      const node = replaceLayeredPresetInstance(draft, component);
+      const root = draft.nodes[draft.rootNodeId];
+      if (root) root.style.backgroundColor = "#FFFFFF";
+      draft.editor = { selection: [node.id], viewportPreset: "iphone" };
+      setSelectedNodeId(node.id);
+      setSelectedComponentId("");
+      setSelectedAsset(undefined);
+      setFocusedLayerId("");
+      setLeftPanelTab("layers");
+      setInspectorTab("properties");
+    });
+  }
+
+  function removeStarterOrbFromCanvas(draft: StudioProject) {
+    const starterOrb = draft.nodes.orb;
+    const root = draft.nodes[draft.rootNodeId];
+    if (!starterOrb || !root || starterOrb.parentId !== draft.rootNodeId) return;
+    root.childIds = root.childIds.filter((childId) => childId !== starterOrb.id);
+    removeNodeMotionReferences(draft, starterOrb.id);
+    delete draft.nodes[starterOrb.id];
+  }
+
+  function replaceLayeredPresetInstance(draft: StudioProject, component: StudioComponent) {
+    removeComponentInstances(draft, component.id);
+    draft.components[component.id] = component;
+    return instantiateLayeredComponent(draft, component);
   }
 
   function createSyncedComponentSet() {
@@ -384,7 +633,7 @@ function App() {
       draft.roles[groupRole] = {
         id: groupRole,
         name: "syncGroup",
-        description: "Components animated together from one phase"
+        description: "Components animated together from one clip"
       };
 
       const nodes = [
@@ -429,6 +678,7 @@ function App() {
       draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: firstNode ? [firstNode.id] : [] };
       setSelectedNodeId(firstNode?.id ?? "");
       setSelectedComponentId("");
+      setSelectedAsset(undefined);
       setSelectedPhaseId(phaseId);
       setTargetMode("role");
       setWorkspaceMode("animate");
@@ -461,18 +711,27 @@ function App() {
         if (node.roles.length === 0) node.roles = ["actor"];
       }
       setSelectedComponentId("");
+      setSelectedAsset((current) => {
+        if (current?.type === "component" && current.id === selectedComponent.id) return undefined;
+        if (current?.type === "layer" && current.componentId === selectedComponent.id) return undefined;
+        return current;
+      });
     });
   }
 
   function deleteSelectedNode() {
     if (!selectedNode || selectedNode.id === project.rootNodeId) return;
     patchProject((draft) => {
-      delete draft.nodes[selectedNode.id];
+      const deletedIds = collectNodeSubtreeIds(draft, selectedNode.id);
       for (const node of Object.values(draft.nodes)) {
-        node.childIds = node.childIds.filter((childId) => childId !== selectedNode.id);
+        node.childIds = node.childIds.filter((childId) => !deletedIds.has(childId));
       }
-      removeNodeMotionReferences(draft, selectedNode.id);
+      for (const nodeId of deletedIds) {
+        removeNodeMotionReferences(draft, nodeId);
+        delete draft.nodes[nodeId];
+      }
       setSelectedNodeId(draft.rootNodeId);
+      setSelectedAsset(undefined);
     });
   }
 
@@ -542,13 +801,13 @@ function App() {
 
   function addPhase() {
     patchProject((draft) => {
-      const phaseId = uniqueId("phase", draft.phases);
+      const phaseId = uniqueId("clip", draft.phases);
       const node = draft.nodes[selectedNodeId] ?? draft.nodes[draft.rootNodeId];
       const selector: MotionPropertySelector = { id: node?.id ?? draft.rootNodeId, properties: transformProperties };
       const nodeId = node?.id ?? draft.rootNodeId;
       draft.phases[phaseId] = {
         id: phaseId,
-        name: `Phase ${draft.phaseOrder.length + 1}`,
+        name: `Clip ${draft.phaseOrder.length + 1}`,
         mode: "absolute",
         startDelay: 0,
         nextMode: "atTime",
@@ -689,11 +948,15 @@ function App() {
       if (!response.ok || !result.ok) {
         throw new Error(result.error ?? `Bridge returned ${response.status}`);
       }
+      const previewClients = typeof result.previewClients === "number" ? result.previewClients : 0;
+      const revision = typeof result.revision === "number" ? result.revision : null;
+      setBridgeHealth({ ok: true, revision, previewClients, checkedAt: Date.now() });
       setSendState("sent");
-      setBridgeMessage(`Sent r${result.revision}; simulator clients ${result.previewClients}`);
+      setBridgeMessage(previewClients > 0 ? `Sent r${revision}; simulator connected` : `Sent r${revision}; no simulator client connected`);
     } catch (error) {
       setSendState("failed");
       setBridgeMessage(error instanceof Error ? error.message : String(error));
+      setBridgeHealth({ ok: false, revision: null, previewClients: 0, checkedAt: Date.now() });
     }
   }
 
@@ -704,12 +967,14 @@ function App() {
     setSelectedNodeId(fresh.editor?.selection[0] ?? "");
     setSelectedPhaseId(fresh.phaseOrder[0] ?? "");
     setSelectedComponentId("");
+    setSelectedAsset(undefined);
     setBridgeMessage("Reset to fixture");
   }
 
   function clearCanvasSelection() {
     setSelectedNodeId("");
     setSelectedComponentId("");
+    setSelectedAsset(undefined);
     patchProject((draft) => {
       draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [] };
     });
@@ -724,6 +989,18 @@ function App() {
     link.download = `${project.id}.motion.json`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function copyJson(label: string, json: string) {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopiedJsonLabel(label);
+      window.setTimeout(() => {
+        setCopiedJsonLabel((current) => current === label ? "" : current);
+      }, 1600);
+    } catch (error) {
+      setBridgeMessage(`Copy failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   function playWebPreview() {
@@ -753,6 +1030,7 @@ function App() {
 
     setSelectedNodeId(nodeId);
     setSelectedComponentId("");
+    setSelectedAsset(undefined);
     setIsPreviewing(false);
     setPreviewTime(0);
     event.preventDefault();
@@ -824,6 +1102,7 @@ function App() {
 
     setSelectedNodeId(nodeId);
     setSelectedComponentId("");
+    setSelectedAsset(undefined);
     event.preventDefault();
     event.stopPropagation();
 
@@ -875,7 +1154,7 @@ function App() {
     function move(moveEvent: PointerEvent) {
       const dx = moveEvent.clientX - startX;
       if (side === "left") {
-        setLeftPanelWidth(clamp(round(startLeft + dx), 148, 320));
+        setLeftPanelWidth(clamp(round(startLeft + dx), 220, 420));
       } else {
         setRightPanelWidth(clamp(round(startRight - dx), 248, 420));
       }
@@ -891,6 +1170,86 @@ function App() {
     window.addEventListener("pointerup", stop, { once: true });
     window.addEventListener("pointercancel", stop, { once: true });
   }
+
+  function selectAsset(asset: AssetSelection) {
+    setSelectedAsset(asset);
+    setSelectedComponentId("");
+    setSelectedNodeId("");
+    setFocusedLayerId("");
+  }
+
+  function handleAssetRowKeyDown(event: React.KeyboardEvent<HTMLElement>, asset: AssetSelection) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectAsset(asset);
+  }
+
+  function runAssetCommand(event: React.MouseEvent<HTMLElement>, action: () => void) {
+    event.stopPropagation();
+    action();
+  }
+
+  function stopAssetCommandKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  const presetAssets: PresetAsset[] = [
+    {
+      id: "hotelActiveGradient",
+      name: "Hotel Active Gradient",
+      meta: "Figma node 5013:45996 · dodge ignored",
+      swatchClass: "hotel active",
+      ariaLabel: "Preview Hotel Active Gradient asset preset",
+      badges: ["Asset", "Native", "Figma"],
+      place: createHotelActiveGradientComponent
+    },
+    {
+      id: "hotelActiveGradientTall",
+      name: "Hotel Active Gradient 500",
+      meta: "375 x 500 · native bottom-anchored extension",
+      swatchClass: "hotel active",
+      ariaLabel: "Preview Hotel Active Gradient 500 asset preset",
+      badges: ["Asset", "Native", "Layered"],
+      place: createHotelActiveGradientTallComponent
+    },
+    {
+      id: "hotelGradient",
+      name: "Hotel Full Gradient",
+      meta: "2 editable native layers",
+      swatchClass: "hotel",
+      ariaLabel: "Preview Hotel Full Gradient asset preset",
+      badges: ["Asset", "Native", "Layered"],
+      place: createHotelGradientComponent
+    },
+    {
+      id: "voiceGradient",
+      name: "Voice Gradient",
+      meta: "Layered preset with fallback layers",
+      swatchClass: "voice",
+      ariaLabel: "Preview Voice Gradient asset preset",
+      badges: ["Asset", "Partial", "Fallback"],
+      place: createVoiceGradientComponent
+    },
+    {
+      id: "hotelPlanetTwo",
+      name: "Blue Planet",
+      meta: "Single native layer",
+      swatchClass: "blue",
+      ariaLabel: "Preview Blue Planet asset preset",
+      badges: ["Asset", "Native"],
+      place: createHotelPlanetTwoComponent
+    },
+    {
+      id: "hotelPlanetOne",
+      name: "Hotel Planet 1",
+      meta: "Single native layer",
+      swatchClass: "pink",
+      ariaLabel: "Preview Hotel Planet 1 asset preset",
+      badges: ["Asset", "Native"],
+      place: createHotelPlanetOneComponent
+    }
+  ];
+  const selectedAssetDetails = selectedAsset ? assetSelectionDetails(project, selectedAsset, presetAssets) : undefined;
 
   return (
     <main
@@ -917,6 +1276,7 @@ function App() {
           <div className="toolbar-group">
             <button type="button" onClick={() => addNode("circle")}>Circle</button>
             <button type="button" onClick={() => addNode("roundedRectangle")}>Rectangle</button>
+            <button type="button" onClick={() => addNode("path")}>Path</button>
             <button type="button" onClick={() => addNode("text")}>Text</button>
           </div>
           <div className="toolbar-group">
@@ -925,13 +1285,43 @@ function App() {
         </div>
 
         <div className="toolbar-actions">
+          <div className="preview-background-switch" aria-label="Editor preview background">
+            {previewBackgroundOptions.map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                className={canvasPreviewBackground === option.id ? "active" : ""}
+                onClick={() => setPreviewBackground(option.id)}
+                aria-label={`Use ${option.label.toLowerCase()} editor preview background`}
+                title={`${option.label} editor preview background`}
+              >
+                <span className="preview-background-swatch" style={previewBackgroundSwatchStyle(option.id, runtimeBackgroundColor)} />
+              </button>
+            ))}
+          </div>
           <button type="button" className="preview-button" onClick={isPreviewing ? stopWebPreview : playWebPreview}>
             {isPreviewing ? "Stop Preview" : "Preview"}
           </button>
           <button type="button" onClick={downloadJson} disabled={!compileResult.ok}>Export JSON</button>
+          <button type="button" className={showDeveloperOutput ? "dev-mode-toggle active" : "dev-mode-toggle"} onClick={() => setShowDeveloperOutput((value) => !value)}>
+            Dev
+          </button>
           <button type="button" className="primary" onClick={sendToSimulator} disabled={sendState === "sending"}>
             {sendState === "sending" ? "Sending" : "Send to Simulator"}
           </button>
+          <span
+            className={`bridge-message ${simulatorStatusClass}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              minHeight: 28,
+              margin: 0,
+              padding: "0 9px",
+              whiteSpace: "nowrap"
+            }}
+          >
+            {simulatorStatusMessage}
+          </span>
         </div>
       </header>
 
@@ -958,21 +1348,23 @@ function App() {
                 type="button"
                 className={`layer-row ${selectedNodeId === node.id ? "selected" : ""}`}
                 key={node.id}
+                style={{ paddingLeft: 10 + nodeDepth(project, node) * 14 }}
                 onClick={() => {
                   setSelectedNodeId(node.id);
                   setSelectedComponentId("");
+                  setSelectedAsset(undefined);
                 }}
               >
                 <span className={`kind-dot kind-${node.kind}`} />
                   <div>
                     <strong>{node.name}</strong>
-                    <small>{node.componentId ? <b>Instance</b> : null}<span>#{node.id} · {node.kind}</span></small>
+                    <small>{node.componentId ? <b>{project.components[node.componentId]?.name ?? "Instance"}</b> : null}<span>#{node.id} · {node.kind}</span></small>
                   </div>
                 </button>
             ))}
           </div>
         </section>
-        <section className="left-section role-groups">
+        {showDeveloperOutput ? <section className="left-section role-groups">
           <div className="section-heading">
             <h2>Groups</h2>
             <span>roles</span>
@@ -982,70 +1374,184 @@ function App() {
               <span className="role-pill" key={role.id}>{role.name}</span>
             ))}
           </div>
-        </section>
+        </section> : null}
         </>
         ) : null}
 
         {leftPanelTab === "assets" ? (
         <section className="left-section component-library">
           <div className="section-heading">
-            <h2>Components</h2>
-            <span>{Object.keys(project.components).length}</span>
+            <h2>Asset Browser</h2>
+            <span>{presetAssets.length + componentSearchResults.length}</span>
           </div>
-          <p className="panel-hint">Reusable sources. Place instances onto the artboard.</p>
-          <div className="button-grid">
-            {selectedNode?.componentId ? (
-              <button type="button" className="secondary-link field-wide" onClick={() => {
-                setSelectedComponentId(selectedNode.componentId ?? "");
-                setSelectedNodeId(project.rootNodeId);
-              }}>Edit Main Component</button>
-            ) : (
-              <button type="button" className="primary field-wide" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>Create Component from Selection</button>
-            )}
-            <button type="button" className="component-create field-wide" onClick={() => createComponent("circle")}>New Main Component</button>
-            <button type="button" className="component-create field-wide synced-action" onClick={createSyncedComponentSet}>Create Synced Set</button>
-            <button type="button" className="component-create" onClick={() => createComponent("circle")}><span className="kind-dot kind-circle" />Circle</button>
-            <button type="button" className="component-create" onClick={() => createComponent("roundedRectangle")}><span className="kind-dot kind-roundedRectangle" />Card</button>
-            <button type="button" className="component-create" onClick={() => createComponent("text")}><span className="kind-dot kind-text" />Text</button>
+          <div className="asset-search">
+            <input
+              aria-label="Search assets and components"
+              placeholder="Search assets or components"
+              value={componentSearch}
+              onChange={(event) => setComponentSearch(event.target.value)}
+            />
+          </div>
+          {selectedAsset && selectedAssetDetails ? (
+            <div className="component-create-panel" aria-live="polite">
+              <div className="component-create-heading">
+                <span>{selectedAssetDetails.label}</span>
+                <b>{selectedAssetDetails.badges[0] ?? "Selected"}</b>
+              </div>
+              <div>
+                <AssetSelectionPreview project={project} selection={selectedAsset} />
+                <strong>{selectedAssetDetails.name}</strong>
+                <p className="inline-note compact-note">{selectedAssetDetails.meta}</p>
+                <FidelityBadges badges={selectedAssetDetails.badges} />
+              </div>
+            </div>
+          ) : null}
+          <div className="component-create-panel">
+            <div className="component-create-heading">
+              <span>Create component</span>
+              {selectedNode?.componentId ? (
+                <button type="button" onClick={(event) => runAssetCommand(event, () => {
+                  setSelectedComponentId(selectedNode.componentId ?? "");
+                  setSelectedNodeId(project.rootNodeId);
+                })}>Edit main</button>
+              ) : (
+                <button type="button" onClick={createComponentFromSelected} disabled={!selectedNode || selectedNode.id === project.rootNodeId}>From selection</button>
+              )}
+            </div>
+            <div className="component-create-strip" aria-label="Create component">
+              <button type="button" onClick={() => createComponent("circle")} title="Create circle component"><span className="kind-dot kind-circle" />Circle</button>
+              <button type="button" onClick={() => createComponent("roundedRectangle")} title="Create card component"><span className="kind-dot kind-roundedRectangle" />Card</button>
+              <button type="button" onClick={() => createComponent("path")} title="Create path component"><span className="kind-dot kind-path" />Path</button>
+              <button type="button" onClick={() => createComponent("text")} title="Create text component"><span className="kind-dot kind-text" />Text</button>
+            </div>
+          </div>
+          <div className="asset-group">
+            <div className="asset-group-heading">
+              <span>Asset presets</span>
+              <b>native</b>
+            </div>
+            <div className="preset-list">
+              {presetAssets.map((asset) => {
+                const assetSelection: AssetSelection = { type: "preset", id: asset.id };
+                const isSelectedAsset = sameAssetSelection(selectedAsset, assetSelection);
+                return (
+                  <div
+                    tabIndex={0}
+                    key={asset.id}
+                    className={`preset-row ${isSelectedAsset ? "selected" : ""}`}
+                    onClick={() => selectAsset(assetSelection)}
+                    onKeyDown={(event) => handleAssetRowKeyDown(event, assetSelection)}
+                  >
+                    <span className={`preset-swatch ${asset.swatchClass}`} />
+                    <span>
+                      <span className="asset-kicker">Asset preset</span>
+                      <strong>{asset.name}</strong>
+                      <small>{asset.meta}</small>
+                      <FidelityBadges badges={asset.badges} />
+                    </span>
+                    <button
+                      type="button"
+                      className="mini-action place"
+                      aria-label={`Place ${asset.name} Preset`}
+                      onClick={(event) => runAssetCommand(event, asset.place)}
+                      onKeyDown={stopAssetCommandKeyDown}
+                    >
+                      Place
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="asset-group-heading component-results-heading">
+            <span>Component assets</span>
+            <b>{componentSearchResults.length}</b>
           </div>
           <div className="component-list">
-            {Object.values(project.components).map((component) => {
-              const isSelectedComponent = selectedComponentId === component.id;
+            {componentSearchResults.map((component) => {
+              const componentAssetSelection: AssetSelection = { type: "component", id: component.id };
+              const isSelectedAsset = sameAssetSelection(selectedAsset, componentAssetSelection);
               const isSourceForSelection = selectedNode?.componentId === component.id;
+              const layerAssets = componentLayerAssets(component);
+              const componentBadges = componentFidelityBadges(component);
               return (
+              <React.Fragment key={component.id}>
               <div
-                role="group"
-                className={`component-row ${isSelectedComponent ? "selected" : ""} ${isSourceForSelection ? "source-active" : ""}`}
-                key={component.id}
+                tabIndex={0}
+                className={`component-row ${isSelectedAsset ? "selected" : ""} ${isSourceForSelection ? "source-active" : ""}`}
+                onClick={() => selectAsset(componentAssetSelection)}
+                onKeyDown={(event) => handleAssetRowKeyDown(event, componentAssetSelection)}
               >
                 <ComponentSwatch component={component} />
                 <div>
-                  <span className="asset-kicker">{isSourceForSelection ? "Source" : "Main"}</span>
+                  <span className="asset-kicker">{isSourceForSelection ? "Selected node source" : "Component asset"}</span>
                   <strong>{component.name}</strong>
                   <span className="asset-meta"><b>{component.kind === "roundedRectangle" ? "card" : component.kind ?? "component"}</b><b>{instanceCount(project, component.id)} inst</b></span>
+                  <FidelityBadges badges={componentBadges} />
                 </div>
                 <div className="asset-actions">
                   <button
                     type="button"
                     className="mini-action edit"
-                    onClick={() => {
+                    aria-label={`Edit ${component.name} component`}
+                    onClick={(event) => runAssetCommand(event, () => {
                       setSelectedComponentId(component.id);
                       setSelectedNodeId(project.rootNodeId);
-                    }}
+                      setSelectedAsset({ type: "component", id: component.id });
+                    })}
+                    onKeyDown={stopAssetCommandKeyDown}
                   >
                     Edit
                   </button>
                   <button
                     type="button"
                     className="mini-action place"
-                    onClick={() => {
-                    instantiateComponent(component.id);
-                    }}
+                    aria-label={`Place ${component.name} component`}
+                    onClick={(event) => runAssetCommand(event, () => instantiateComponent(component.id))}
+                    onKeyDown={stopAssetCommandKeyDown}
                   >
                     Place
                   </button>
                 </div>
               </div>
+              {layerAssets.length > 0 ? (
+                <div className="component-layer-assets" aria-label={`${component.name} layer assets`}>
+                  <div className="component-layer-assets-heading">
+                    <span>Native layer assets</span>
+                    <b>{layerAssets.length}</b>
+                  </div>
+                  {layerAssets.map((node) => {
+                    const layerAssetSelection: AssetSelection = { type: "layer", componentId: component.id, nodeId: node.id };
+                    const isSelectedLayerAsset = sameAssetSelection(selectedAsset, layerAssetSelection);
+                    return (
+                    <div
+                      className={`component-layer-row ${isSelectedLayerAsset ? "selected" : ""}`}
+                      key={`${component.id}-${node.id}`}
+                      tabIndex={0}
+                      onClick={() => selectAsset(layerAssetSelection)}
+                      onKeyDown={(event) => handleAssetRowKeyDown(event, layerAssetSelection)}
+                    >
+                      <LayerAssetSwatch node={node} />
+                      <div>
+                        <strong>{node.name}</strong>
+                        <small>{node.kind} · {Math.round(nodeWidth(node))} x {Math.round(nodeHeight(node))}</small>
+                        <FidelityBadges badges={nodeFidelityBadges(node)} />
+                      </div>
+                      <button
+                        type="button"
+                        className="mini-action place"
+                        aria-label={`Place detached layer ${node.name}`}
+                        onClick={(event) => runAssetCommand(event, () => instantiateComponentLayer(component.id, node.id))}
+                        onKeyDown={stopAssetCommandKeyDown}
+                      >
+                        Place
+                      </button>
+                    </div>
+                  );
+                  })}
+                </div>
+              ) : null}
+              </React.Fragment>
             );
             })}
           </div>
@@ -1070,12 +1576,80 @@ function App() {
             <span className={selectedNode?.componentId ? "status-badge" : "status-badge plain"}>{selectedNode?.componentId ? "Instance" : "Layer"}</span>
             <small>{selectedNode?.componentId ? project.components[selectedNode.componentId]?.name ?? selectedNode.componentId : selectedNode?.kind ?? "none"}</small>
           </div>
+          <div className="layer-focus-controls">
+            <button
+              type="button"
+              className={focusedLayerId ? "" : "active"}
+              onClick={() => setFocusedLayerId("")}
+            >
+              All layers
+            </button>
+            <button
+              type="button"
+              className={focusedLayerId ? "active" : ""}
+              disabled={!selectedNode || selectedNode.id === project.rootNodeId}
+              onClick={() => {
+                if (selectedNode && selectedNode.id !== project.rootNodeId) {
+                  setFocusedLayerId(selectedNode.id);
+                }
+              }}
+            >
+              Focus selected
+            </button>
+            {focusedLayerId ? <small>{project.nodes[focusedLayerId]?.name ?? focusedLayerId}</small> : null}
+          </div>
           <div className={`runtime-status ${compileResult.ok ? "ok" : "bad"}`}>
             <span className="status-light" />
-            {compileResult.ok ? "Runtime JSON valid" : "Schema issue"}
+            <span title={compileResult.ok ? "Export document is valid" : compileResult.error}>
+              {compileResult.ok ? "Export ready" : compileResult.error}
+            </span>
           </div>
         </header>
 
+        {focusedLayer && focusedPreviewRootId ? (
+          <div className="layer-inspection-frame">
+            <div className="layer-inspection-header">
+              <div>
+                <p className="eyebrow">Layer inspection</p>
+                <h3>{focusedLayer.name}</h3>
+                <span>{focusedLayer.kind} · {Math.round(nodeWidth(focusedLayer))} x {Math.round(nodeHeight(focusedLayer))}</span>
+              </div>
+              <button type="button" onClick={() => setFocusedLayerId("")}>Back to canvas</button>
+            </div>
+            <div className="layer-inspection-grid">
+              <div className="layer-inspection-card">
+                <div className="layer-inspection-title">
+                  <strong>In component</strong>
+                  <span>{project.nodes[focusedPreviewRootId]?.name ?? focusedPreviewRootId}</span>
+                </div>
+                <div
+                  className="layer-inspection-stage component-space"
+                  style={{
+                    width: nodeWidth(project.nodes[focusedPreviewRootId]),
+                    height: nodeHeight(project.nodes[focusedPreviewRootId])
+                  }}
+                >
+                  <SemanticSvgPreview project={project} rootId={focusedPreviewRootId} focusNodeId={focusedLayer.id} display="inline" />
+                </div>
+              </div>
+              <div className="layer-inspection-card">
+                <div className="layer-inspection-title">
+                  <strong>Layer only</strong>
+                  <span>{focusedLayer.id}</span>
+                </div>
+                <div
+                  className="layer-inspection-stage layer-space"
+                  style={{
+                    width: Math.min(Math.max(nodeWidth(focusedLayer), 160), 520),
+                    height: Math.min(Math.max(nodeHeight(focusedLayer), 120), 360)
+                  }}
+                >
+                  <SemanticSvgPreview project={singleNodePreviewProject(focusedLayer)} rootId={focusedLayer.id} display="inline" />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="canvas-frame">
           <div
             className="phone-canvas"
@@ -1085,6 +1659,7 @@ function App() {
               clearCanvasSelection();
             }}
             style={{
+              ...previewBackgroundStyle,
               transform: `translate(${previewFrame.shake.x}px, ${previewFrame.shake.y}px)`
             }}
           >
@@ -1102,34 +1677,19 @@ function App() {
             <div className="canvas-tool-hud" aria-label="Canvas manipulation tools">
               <button type="button" className="hud-tool active">Move</button>
               <button type="button" className="hud-tool live">Resize</button>
-              <button type="button" className="hud-tool">Pivot</button>
-              <button type="button" className="hud-tool">Snap 8</button>
             </div>
             <div className="canvas-side-tools" aria-label="Selection tools">
               <button type="button" className="active">V</button>
-              <button type="button">R</button>
-              <button type="button">P</button>
             </div>
             <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
-            {orderedNodes(project)
-              .filter((node) => node.id !== project.rootNodeId)
-              .map((node) => (
-                <CanvasNode
-                  key={node.id}
-                  node={node}
-                  selected={node.id === selectedNodeId}
-                  onPointerDown={(event) => startCanvasDrag(node.id, event)}
-                  onResizeStart={(corner, event) => startCanvasResize(node.id, corner, event)}
-                  {...(previewFrame.transforms[node.id] ? { previewTransform: previewFrame.transforms[node.id] } : {})}
-                  {...(workspaceMode === "animate" && selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
-                />
-              ))}
+            {renderCanvasChildren(project.rootNodeId, canvasCenter)}
             {previewFrame.visuals.map((visual) => (
               <PreviewVisualNode visual={visual} key={visual.id} />
             ))}
             {workspaceMode === "animate" && selectedPhase ? <MotionGuide phase={selectedPhase} node={selectedNode} targetMode={targetMode} /> : null}
           </div>
         </div>
+        )}
       </section>
 
       <aside className="panel right-panel">
@@ -1142,11 +1702,11 @@ function App() {
         />
         {workspaceMode === "design" ? (
           <div className="inspector-tabs" role="tablist" aria-label="Inspector sections">
-            {([
-              ["properties", "Properties"],
-              ["effects", "Effects"],
-              ["code", "Code"]
-            ] as const).map(([tab, label]) => (
+            {[
+              ["properties", "Properties"] as const,
+              ["effects", "Effects"] as const,
+              ...(showDeveloperOutput ? [["code", "Code"] as const] : [])
+            ].map(([tab, label]) => (
               <button
                 type="button"
                 key={tab}
@@ -1186,19 +1746,31 @@ function App() {
                 <button type="button" className="primary" onClick={() => instantiateComponent(selectedComponent.id)}>Place Instance</button>
                 <button type="button" onClick={duplicateSelectedComponent}>Duplicate Main</button>
               </div>
+              {selectedComponentIsLayered ? (
+                <div className="inspector-group inspector-summary">
+                  <h3><span>01</span> Layered Component</h3>
+                  <div className="summary-grid">
+                    <span><b>Layers</b>{selectedComponent.nodeIds?.length ?? Object.keys(selectedComponent.nodes ?? {}).length}</span>
+                    <span><b>Runtime</b>native nodes</span>
+                    <span><b>Source</b>Figma-style preset</span>
+                    <span><b>Use</b>place instance</span>
+                  </div>
+                  <p className="panel-hint">This component is a reusable multi-layer preset. Place it, select individual layers, then tune their fills/effects or animate the shared component role.</p>
+                </div>
+              ) : null}
               <div className="form-grid">
                 <label>Name<input value={selectedComponent.name} onChange={(event) => updateSelectedComponent((component) => { component.name = event.target.value; })} /></label>
-                <div className="field-block field-wide">
+                {selectedComponentIsLayered ? null : <div className="field-block field-wide">
                   <span>Type</span>
                   <div className="segmented-row compact">
-                    {(["circle", "roundedRectangle", "text"] as const).map((kind) => (
+                    {(["circle", "roundedRectangle", "path", "text"] as const).map((kind) => (
                       <button
                         type="button"
                         key={kind}
                         className={(selectedComponent.kind ?? "circle") === kind ? "segment active" : "segment"}
                         onClick={() => updateSelectedComponent((component) => {
                           component.kind = kind;
-                          component.layout = kind === "text" ? {} : { width: kind === "circle" ? 72 : 150, height: kind === "circle" ? 72 : 86 };
+                          component.layout = defaultLayout(kind);
                           component.style = defaultStyle(kind, component.name);
                           component.fills = defaultFills(kind);
                         })}
@@ -1207,19 +1779,19 @@ function App() {
                       </button>
                     ))}
                   </div>
-                </div>
-                <NumberField label="Width" value={numberValue(selectedComponent.layout?.width, selectedComponent.kind === "circle" ? 72 : 150)} onChange={(value) => updateSelectedComponent((component) => {
+                </div>}
+                {selectedComponentIsLayered ? null : <NumberField label="Width" value={numberValue(selectedComponent.layout?.width, selectedComponent.kind === "circle" ? 72 : 150)} onChange={(value) => updateSelectedComponent((component) => {
                   component.layout = { ...(component.layout ?? {}), width: value };
-                })} />
-                <NumberField label="Height" value={numberValue(selectedComponent.layout?.height, selectedComponent.kind === "circle" ? 72 : 86)} onChange={(value) => updateSelectedComponent((component) => {
+                })} />}
+                {selectedComponentIsLayered ? null : <NumberField label="Height" value={numberValue(selectedComponent.layout?.height, selectedComponent.kind === "circle" ? 72 : 86)} onChange={(value) => updateSelectedComponent((component) => {
                   component.layout = { ...(component.layout ?? {}), height: value };
-                })} />
-                {selectedComponent.kind === "roundedRectangle" ? (
+                })} />}
+                {!selectedComponentIsLayered && selectedComponent.kind === "roundedRectangle" ? (
                   <NumberField label="Radius" value={numberValue(selectedComponent.style?.cornerRadius, 18)} onChange={(value) => updateSelectedComponent((component) => {
                     component.style = { ...(component.style ?? {}), cornerRadius: value };
                   })} />
                 ) : null}
-                {selectedComponent.kind === "text" ? (
+                {!selectedComponentIsLayered && selectedComponent.kind === "text" ? (
                   <label className="field-wide">Text<input value={String(selectedComponent.style?.text ?? selectedComponent.name)} onChange={(event) => updateSelectedComponent((component) => {
                     component.style = { ...(component.style ?? {}), text: event.target.value };
                   })} /></label>
@@ -1235,13 +1807,18 @@ function App() {
               <h2>Component Effects</h2>
             </div>
             <ComponentPreview component={selectedComponent} />
-            <StyleEditor
+            {selectedComponentIsLayered ? (
+              <div className="inspector-group inspector-summary">
+                <h3><span>03</span> Layer Effects</h3>
+                <p className="panel-hint">Layered components keep each visual layer editable on the canvas. Place an instance, choose a layer in the Layers panel, then edit its fill, blur, shadow, and stroke.</p>
+              </div>
+            ) : <StyleEditor
               kind={selectedComponent.kind ?? "circle"}
               style={selectedComponent.style ?? {}}
               fills={selectedComponent.fills ?? []}
               onChange={(style) => updateSelectedComponent((component) => { component.style = style; })}
               onFillsChange={(fills) => updateSelectedComponent((component) => { component.fills = fills; })}
-            />
+            />}
           </section>
         ) : null}
 
@@ -1249,12 +1826,14 @@ function App() {
         <section>
           <div className="section-heading">
             <h2>Inspector</h2>
-            {selectedNode?.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
+            {selectedNode && selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
           </div>
           {selectedNode ? (
             <>
               {selectedNode.componentId ? null : selectedNode.id === project.rootNodeId ? (
                 <p className="inline-note compact-note"><strong>Scene root</strong>. Add layers or place component instances to build the composition.</p>
+              ) : selectedNode.roles.includes("detachedAssetLayer") || selectedNode.roles.includes("assetLayer") ? (
+                <p className="inline-note compact-note"><strong>Detached asset layer</strong>{detachedAssetSourceName(project, selectedNode) ? ` from ${detachedAssetSourceName(project, selectedNode)}` : ""}. This is editable independently and will not update other instances.</p>
               ) : (
                 <p className="inline-note compact-note"><strong>Plain layer</strong>. Use Create from Selection to save it as a reusable component.</p>
               )}
@@ -1269,6 +1848,7 @@ function App() {
                   <button type="button" className="secondary-link" onClick={() => {
                     setSelectedComponentId(selectedNode.componentId ?? "");
                     setSelectedNodeId(project.rootNodeId);
+                    setSelectedAsset(undefined);
                   }}>Edit Main</button>
                   <button type="button" onClick={detachSelectedInstance}>Detach Instance</button>
                 </div>
@@ -1277,7 +1857,7 @@ function App() {
                 <h3><span>01</span> Identity</h3>
               <div className="form-grid">
                 <label>Name<input value={selectedNode.name} onChange={(event) => updateSelectedNode((node) => { node.name = event.target.value; })} /></label>
-                <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label>
+                {showDeveloperOutput ? <label>Role<input value={selectedNode.roles[0] ?? ""} onChange={(event) => updateSelectedRole(event.target.value)} /></label> : null}
               </div>
               </div>
               <div className="inspector-group">
@@ -1293,14 +1873,14 @@ function App() {
                 </div>
               </div>
               <div className="inspector-group inspector-summary">
-                <h3><span>03</span> Runtime</h3>
+                <h3><span>03</span> Layer status</h3>
                 <div className="summary-grid">
-                  <span><b>Selector</b>#{selectedNode.id}</span>
+                  {showDeveloperOutput ? <span><b>Selector</b>#{selectedNode.id}</span> : null}
                   <span><b>Kind</b>{selectedNode.kind}</span>
                   <span><b>Effects</b>{hasVisualEffects(selectedNode) ? "custom" : "default"}</span>
                   <span><b>Motion</b>{nodeUsedInAnimation(project, selectedNode.id) ? "bound" : "ready"}</span>
                 </div>
-                <p className="panel-hint">Use Effects for visual styling and Animate for motion phases. This layer keeps the same runtime identity in exported JSON.</p>
+                <p className="panel-hint">Use Effects for visual styling and Animate for motion. Developer mode shows runtime selectors.</p>
               </div>
             </>
           ) : null}
@@ -1327,7 +1907,7 @@ function App() {
           <section>
             <div className="section-heading">
               <h2>Animation</h2>
-              <button type="button" className="danger" onClick={deletePhase}>Delete Phase</button>
+              <button type="button" className="danger" onClick={deletePhase}>Delete Clip</button>
             </div>
             <div className="form-grid">
               <label>Name<input value={selectedPhase.name} onChange={(event) => updateSelectedPhase((phase) => { phase.name = event.target.value; })} /></label>
@@ -1335,7 +1915,7 @@ function App() {
                 <span>Target</span>
                 <div className="segmented-row compact">
                   <button type="button" className={targetMode === "selected" ? "segment active" : "segment"} onClick={() => setTargetMode("selected")}>Selected</button>
-                  <button type="button" className={targetMode === "role" ? "segment active" : "segment"} onClick={() => setTargetMode("role")}>Role group</button>
+                  <button type="button" className={targetMode === "role" ? "segment active" : "segment"} onClick={() => setTargetMode("role")}>Group</button>
                 </div>
               </div>
               <NumberField label="Start Delay" value={selectedPhase.startDelay} step={0.05} onChange={(value) => updateSelectedPhase((phase) => { phase.startDelay = value; })} />
@@ -1405,22 +1985,23 @@ function App() {
 
         {workspaceMode === "design" && inspectorTab === "code" ? (
           <section className="json-section">
-            <div className="section-heading"><h2>Runtime JSON</h2></div>
-            <pre>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
+            <JsonHeader
+              copied={copiedJsonLabel === "design"}
+              onCopy={() => void copyJson("design", designCodePanel.body)}
+              title={designCodePanel.title}
+            />
+            <pre aria-label={designCodePanel.title} tabIndex={0}>{designCodePanel.body}</pre>
           </section>
         ) : null}
 
-        {workspaceMode === "animate" ? (
+        {workspaceMode === "animate" && showDeveloperOutput ? (
         <section className="json-section">
-          <button type="button" className="dev-toggle" onClick={() => setShowDeveloperOutput((value) => !value)}>
-            {showDeveloperOutput ? "Hide Runtime JSON" : "Show Runtime JSON"}
-          </button>
-          {showDeveloperOutput ? (
-            <>
-              <div className="section-heading"><h2>Generated .motion.json</h2></div>
-              <pre>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
-            </>
-          ) : null}
+          <JsonHeader
+            copied={copiedJsonLabel === "runtime"}
+            onCopy={() => void copyJson("runtime", compileResult.ok ? compileResult.value.json : compileResult.error)}
+            title="Generated .motion.json"
+          />
+          <pre aria-label="Generated motion JSON" tabIndex={0}>{compileResult.ok ? compileResult.value.json : compileResult.error}</pre>
         </section>
         ) : null}
       </aside>
@@ -1456,7 +2037,7 @@ function App() {
           </div>
           <div className="timeline-actions">
             <span>{formatTime(previewTime)} / {formatTime(previewPlan.totalDuration)}</span>
-            <button type="button" onClick={addPhase}>Add Phase</button>
+            <button type="button" onClick={addPhase}>Add Clip</button>
           </div>
         </div>
         <div className="timeline-composer">
@@ -1513,12 +2094,70 @@ function App() {
       </section>
     </main>
   );
+
+  function renderCanvasChildren(parentId: string, origin: { x: number; y: number }, ancestorHasSemanticPreview = false): React.ReactNode {
+    const parent = project.nodes[parentId];
+    if (!parent) return null;
+
+    return parent.childIds.map((childId) => {
+      const node = project.nodes[childId];
+      if (!node) return null;
+      const useSemanticPreview = workspaceMode === "design" && node.childIds.length > 0 && !ancestorHasSemanticPreview;
+      return (
+        <CanvasNode
+          key={node.id}
+          node={node}
+          origin={origin}
+          selected={node.id === selectedNodeId}
+          suppressSurface={ancestorHasSemanticPreview}
+          {...(useSemanticPreview ? { semanticPreview: <SemanticSvgPreview project={project} rootId={node.id} focusNodeId={focusedLayerId} /> } : {})}
+          onPointerDown={(event) => startCanvasDrag(node.id, event)}
+          onResizeStart={(corner, event) => startCanvasResize(node.id, corner, event)}
+          {...(previewFrame.transforms[node.id] ? { previewTransform: previewFrame.transforms[node.id] } : {})}
+          {...(workspaceMode === "animate" && selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
+        >
+          {renderCanvasChildren(node.id, { x: nodeWidth(node) / 2, y: nodeHeight(node) / 2 }, ancestorHasSemanticPreview || useSemanticPreview)}
+        </CanvasNode>
+      );
+    });
+  }
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return target.closest("input, textarea, select, [contenteditable='true']") !== null;
+}
+
+function singleNodePreviewProject(node: StudioNode): StudioProject {
+  const previewNode: StudioNode = {
+    ...node,
+    parentId: null,
+    childIds: [],
+    presentation: {
+      ...node.presentation,
+      "offset.x": 0,
+      "offset.y": 0,
+      rotation: 0,
+      scale: 1,
+      "scale.x": 1,
+      "scale.y": 1,
+      opacity: 1
+    }
+  };
+
+  return {
+    studioVersion: 1,
+    id: "single-node-preview",
+    name: "Single Node Preview",
+    rootNodeId: node.id,
+    nodes: { [node.id]: previewNode },
+    roles: {},
+    phases: {},
+    phaseOrder: [],
+    triggers: {},
+    components: {}
+  };
 }
 
 function removeNodeMotionReferences(project: StudioProject, nodeId: string) {
@@ -1528,6 +2167,48 @@ function removeNodeMotionReferences(project: StudioProject, nodeId: string) {
     phase.arcs = phase.arcs.filter((arc) => arc.select.id !== nodeId);
     phase.jiggles = phase.jiggles.filter((jiggle) => jiggle.select.id !== nodeId);
     phase.actions = phase.actions.filter((action) => !actionSelectorReferencesNode(action, nodeId));
+  }
+}
+
+function collectNodeSubtreeIds(project: StudioProject, nodeId: string) {
+  const ids = new Set<string>();
+  const visit = (currentId: string) => {
+    if (ids.has(currentId)) return;
+    ids.add(currentId);
+    for (const childId of project.nodes[currentId]?.childIds ?? []) {
+      visit(childId);
+    }
+  };
+  visit(nodeId);
+  return ids;
+}
+
+function removeComponentInstances(project: StudioProject, componentId: string) {
+  const ids = new Set<string>();
+  for (const node of Object.values(project.nodes)) {
+    if (node.componentId !== componentId) continue;
+    for (const nodeId of collectNodeSubtreeIds(project, node.id)) {
+      ids.add(nodeId);
+    }
+  }
+
+  if (ids.size === 0) return;
+
+  for (const node of Object.values(project.nodes)) {
+    node.childIds = node.childIds.filter((childId) => !ids.has(childId));
+  }
+
+  for (const nodeId of ids) {
+    removeNodeMotionReferences(project, nodeId);
+    delete project.nodes[nodeId];
+  }
+
+  if (project.editor?.selection?.some((nodeId) => ids.has(nodeId))) {
+    project.editor = {
+      ...project.editor,
+      viewportPreset: project.editor.viewportPreset ?? "iphone",
+      selection: []
+    };
   }
 }
 
@@ -1544,7 +2225,18 @@ function selectionKind(project: StudioProject, node: StudioNode | undefined) {
   if (!node) return "No selection";
   if (node.id === project.rootNodeId) return "Scene root";
   if (node.componentId) return `Instance of ${project.components[node.componentId]?.name ?? node.componentId}`;
+  if (node.roles.includes("detachedAssetLayer") || node.roles.includes("assetLayer")) {
+    const source = detachedAssetSourceName(project, node);
+    return source ? `Detached asset layer from ${source}` : "Detached asset layer";
+  }
   return "Plain layer";
+}
+
+function detachedAssetSourceName(project: StudioProject, node: StudioNode) {
+  const sourceRole = node.roles.find((role) => role.startsWith("assetSource:"));
+  if (!sourceRole) return "";
+  const sourceId = sourceRole.slice("assetSource:".length);
+  return project.components[sourceId]?.name ?? sourceId;
 }
 
 function hasVisualEffects(node: StudioNode) {
@@ -1821,6 +2513,23 @@ function StyleEditor({
 }
 
 function ComponentSwatch({ component }: { component: StudioComponent }) {
+  if (component.nodes !== undefined) {
+    return (
+      <span className="component-swatch layered">
+        {componentPreviewNodes(component).slice(0, 4).map((node) => (
+          <i
+            key={node.id}
+            style={{
+              background: visualBackground(node.style ?? {}, node.kind, node.fills ?? []),
+              borderRadius: node.kind === "circle" ? 999 : numberValue(node.style?.cornerRadius, 6),
+              opacity: numberValue(node.presentation.opacity, 1)
+            }}
+          />
+        ))}
+      </span>
+    );
+  }
+
   const kind = component.kind ?? "circle";
   return (
     <span
@@ -1834,7 +2543,139 @@ function ComponentSwatch({ component }: { component: StudioComponent }) {
   );
 }
 
+function LayerAssetSwatch({ node }: { node: StudioNode }) {
+  return (
+    <span className="layer-asset-swatch">
+      <SemanticSvgPreview project={singleNodePreviewProject(node)} rootId={node.id} display="inline" />
+    </span>
+  );
+}
+
+function AssetSelectionPreview({ project, selection }: { project: StudioProject; selection: AssetSelection }) {
+  if (selection.type === "preset") {
+    return <ComponentPreview component={presetAssetPreviewComponent(selection.id)} />;
+  }
+
+  if (selection.type === "component") {
+    const component = project.components[selection.id];
+    return component ? <ComponentPreview component={component} /> : null;
+  }
+
+  const node = project.components[selection.componentId]?.nodes?.[selection.nodeId];
+  return node ? (
+    <div className="component-preview">
+      <LayerAssetSwatch node={node} />
+    </div>
+  ) : null;
+}
+
+function presetAssetPreviewComponent(id: PresetAssetId) {
+  if (id === "hotelActiveGradient") return hotelActiveGradientComponent("hotelActiveGradient");
+  if (id === "hotelActiveGradientTall") return hotelActiveGradientTallComponent("hotelActiveGradientTall");
+  if (id === "hotelGradient") return hotelGradientComponent("hotelGradient");
+  if (id === "voiceGradient") return voiceGradientComponent("voiceGradient");
+  if (id === "hotelPlanetTwo") return hotelPlanetTwoComponent("hotelPlanetTwo");
+  if (id === "hotelPlanetOne") return hotelPlanetOneComponent("hotelPlanetOne");
+  return hotelActiveGradientComponent("hotelActiveGradient");
+}
+
+function FidelityBadges({ badges }: { badges: string[] }) {
+  const visibleBadges = uniqueStrings(badges).slice(0, 4);
+  if (visibleBadges.length === 0) return null;
+  return (
+    <span className="asset-meta fidelity-badges">
+      {visibleBadges.map((badge) => <b key={badge}>{badge}</b>)}
+    </span>
+  );
+}
+
+function sameAssetSelection(left: AssetSelection | undefined, right: AssetSelection | undefined) {
+  if (!left || !right || left.type !== right.type) return false;
+  if (left.type === "preset" && right.type === "preset") return left.id === right.id;
+  if (left.type === "component" && right.type === "component") return left.id === right.id;
+  return left.type === "layer" && right.type === "layer" && left.componentId === right.componentId && left.nodeId === right.nodeId;
+}
+
+function assetSelectionDetails(project: StudioProject, selection: AssetSelection, presets: PresetAsset[]) {
+  if (selection.type === "preset") {
+    const preset = presets.find((asset) => asset.id === selection.id);
+    return {
+      label: "Selected asset",
+      name: preset?.name ?? selection.id,
+      meta: preset?.meta ?? "Figma preset",
+      badges: preset?.badges ?? ["Asset"]
+    };
+  }
+
+  if (selection.type === "component") {
+    const component = project.components[selection.id];
+    return {
+      label: "Selected component",
+      name: component?.name ?? selection.id,
+      meta: component
+        ? `${component.nodes !== undefined ? "Layered component" : component.kind ?? "component"} · ${instanceCount(project, component.id)} placed`
+        : "Component unavailable",
+      badges: component ? componentFidelityBadges(component) : ["Component"]
+    };
+  }
+
+  const component = project.components[selection.componentId];
+  const node = component?.nodes?.[selection.nodeId];
+  return {
+    label: "Selected layer asset",
+    name: node?.name ?? selection.nodeId,
+    meta: node ? `${component?.name ?? selection.componentId} · ${node.kind} · ${Math.round(nodeWidth(node))} x ${Math.round(nodeHeight(node))}` : "Layer unavailable",
+    badges: node ? nodeFidelityBadges(node) : ["Layer"]
+  };
+}
+
+function componentFidelityBadges(component: StudioComponent) {
+  const badges = [component.nodes !== undefined ? "Layered component" : "Component"];
+  const roles = [
+    ...(component.roles ?? []),
+    ...componentPreviewNodes(component).flatMap((node) => node.roles)
+  ];
+  if (roles.some((role) => role.startsWith("native-layer:"))) badges.push("Native");
+  if (roles.some((role) => role.startsWith("figma:"))) badges.push("Figma ref");
+  if (roles.includes("fidelity:asset-required")) badges.push("Asset gap");
+  return uniqueStrings(badges);
+}
+
+function nodeFidelityBadges(node: StudioNode) {
+  const badges = ["Layer"];
+  if (node.roles.some((role) => role.startsWith("native-layer:"))) badges.push("Native");
+  if (node.roles.some((role) => role.startsWith("figma:"))) badges.push("Figma ref");
+  if (node.roles.includes("fidelity:asset-required")) badges.push("Asset gap");
+  if ((node.fills ?? []).length > 0) badges.push("Native fill");
+  return uniqueStrings(badges);
+}
+
 function ComponentPreview({ component }: { component: StudioComponent }) {
+  if (component.nodes !== undefined) {
+    const nodes = componentPreviewNodes(component);
+    return (
+      <div className="component-preview layered-preview">
+        <div className="layered-preview-stage">
+          {nodes.map((node) => (
+            <span
+              key={node.id}
+              className={`layered-preview-node component-${node.kind}`}
+              style={{
+                width: numberValue(node.layout.width, 80) * 0.38,
+                height: numberValue(node.layout.height, 80) * 0.38,
+                transform: `translate(-50%, -50%) translate(${numberValue(node.presentation["offset.x"]) * 0.38}px, ${numberValue(node.presentation["offset.y"]) * 0.38}px) rotate(${numberValue(node.presentation.rotation)}deg) scale(${numberValue(node.presentation.scale, 1)})`,
+                opacity: numberValue(node.presentation.opacity, 1),
+                background: visualBackground(node.style ?? {}, node.kind, node.fills ?? []),
+                borderRadius: node.kind === "circle" ? 999 : numberValue(node.style?.cornerRadius, 12) * 0.38,
+                ...visualEffects(node.style ?? {}, 0.16)
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const kind = component.kind ?? "circle";
   const width = Math.min(numberValue(component.layout?.width, kind === "circle" ? 72 : 150), 170);
   const height = Math.min(numberValue(component.layout?.height, kind === "circle" ? 72 : 86), 110);
@@ -1855,6 +2696,12 @@ function ComponentPreview({ component }: { component: StudioComponent }) {
       </div>
     </div>
   );
+}
+
+function componentPreviewNodes(component: StudioComponent) {
+  const nodes = component.nodes ?? {};
+  const ids = component.nodeIds?.length ? component.nodeIds : Object.keys(nodes);
+  return ids.map((id) => nodes[id]).filter((node): node is StudioNode => node !== undefined);
 }
 
 function MotionSpecEditor({ motion, onChange }: { motion: MotionSpec | undefined; onChange: (motion: MotionSpec) => void }) {
@@ -2052,16 +2899,35 @@ function ActionEditors({
   );
 }
 
+function JsonHeader({ copied, onCopy, title }: { copied: boolean; onCopy: () => void; title: string }) {
+  return (
+    <div className="section-heading json-heading">
+      <h2>{title}</h2>
+      <button type="button" className={copied ? "copy-json copied" : "copy-json"} onClick={onCopy}>
+        {copied ? "Copied" : "Copy JSON"}
+      </button>
+    </div>
+  );
+}
+
 function CanvasNode({
   node,
+  children,
+  origin,
   selected,
+  semanticPreview,
+  suppressSurface = false,
   phaseTargets,
   previewTransform,
   onPointerDown,
   onResizeStart
 }: {
   node: StudioNode;
+  children?: React.ReactNode;
+  origin: { x: number; y: number };
   selected: boolean;
+  semanticPreview?: React.ReactNode;
+  suppressSurface?: boolean;
   phaseTargets?: ReturnType<typeof defaultPhaseTargets>;
   previewTransform?: PreviewTransform | undefined;
   onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -2073,40 +2939,78 @@ function CanvasNode({
   const targetY = previewTransform?.y ?? phaseTargets?.y ?? originY;
   const width = numberValue(node.layout.width, node.kind === "circle" ? 62 : 128);
   const height = numberValue(node.layout.height, node.kind === "circle" ? 62 : 74);
-  const x = canvasCenter.x + targetX - width / 2;
-  const y = canvasCenter.y + targetY - height / 2;
+  const x = origin.x + targetX - width / 2;
+  const y = origin.y + targetY - height / 2;
   const scale = previewTransform?.scale ?? phaseTargets?.scale ?? numberValue(node.presentation.scale, 1);
+  const scaleX = numberValue(node.presentation["scale.x"], 1);
+  const scaleY = numberValue(node.presentation["scale.y"], 1);
   const rotation = previewTransform?.rotation ?? phaseTargets?.rotation ?? numberValue(node.presentation.rotation);
   const opacity = previewTransform?.opacity ?? phaseTargets?.opacity ?? numberValue(node.presentation.opacity, 1);
+  const usesSemanticPreview = semanticPreview !== undefined;
+  const usesProceduralGradient = isProceduralGradient(node.style);
+  const usesPrimitiveCanvasPreview = (node.kind === "path" || usesProceduralGradient) && !usesSemanticPreview && !suppressSurface;
+  const proceduralBackground = proceduralGradientCssBackground(node.style);
+  const backgroundValue = proceduralBackground ?? (node.kind === "text" && node.style.backgroundColor === undefined && (node.fills?.length ?? 0) === 0
+    ? "transparent"
+    : visualBackground(node.style, node.kind, node.fills ?? []));
+  const backgroundAsset = imageBackground(node.style);
+  const backgroundIsGradient = backgroundValue.includes("gradient(");
+  const shapeBounds = nodeShapeBounds(node.style);
+  const hasInsetShapeBounds = shapeBounds.top > 0 || shapeBounds.right > 0 || shapeBounds.bottom > 0 || shapeBounds.left > 0;
   const style = {
     left: x,
     top: y,
     width,
     height,
     opacity,
-    transform: `rotate(${rotation}deg) scale(${scale})`,
-    background: node.kind === "text" && node.style.backgroundColor === undefined && (node.fills?.length ?? 0) === 0
-      ? "transparent"
-      : visualBackground(node.style, node.kind, node.fills ?? []),
+    transform: `rotate(${rotation}deg) scale(${scale * scaleX}, ${scale * scaleY})`,
+    mixBlendMode: cssBlendMode(node.style.blendMode)
+  } satisfies React.CSSProperties;
+  const surfaceStyle = {
+    background: usesSemanticPreview || suppressSurface || usesPrimitiveCanvasPreview || backgroundAsset || backgroundIsGradient ? "transparent" : backgroundValue,
+    backgroundImage: usesSemanticPreview || suppressSurface || usesPrimitiveCanvasPreview ? undefined : backgroundAsset ?? (backgroundIsGradient ? backgroundValue : undefined),
+    backgroundSize: String(node.style.contentMode ?? "100% 100%"),
+    backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
     color: String(node.style.foregroundColor ?? "#FFFFFF"),
-    borderRadius: node.kind === "circle" ? 999 : numberValue(node.style.cornerRadius, 12),
+    borderRadius: node.kind === "circle" ? "50%" : numberValue(node.style.cornerRadius, 12),
     ...visualEffects(node.style)
   } satisfies React.CSSProperties;
 
   return (
     <div
-      className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""}`}
+      className={`canvas-node canvas-${node.kind} ${selected ? "selected" : ""} ${suppressSurface ? "suppressed-node" : ""}`}
       data-node-id={node.id}
       data-roles={node.roles.join(" ")}
       style={style}
       onPointerDown={onPointerDown}
     >
+      <span className="node-hit-target" aria-hidden="true" />
+      <span className={node.style.clip === true ? "node-clip clipped" : "node-clip"}>
+        <span className={suppressSurface ? "node-surface suppressed" : "node-surface"} style={surfaceStyle} aria-hidden={node.kind !== "text"}>
+          {semanticPreview}
+          {usesPrimitiveCanvasPreview ? <SemanticSvgPreview project={singleNodePreviewProject(node)} rootId={node.id} /> : null}
+          {!suppressSurface && !usesSemanticPreview && node.kind === "text" ? String(node.style.text ?? node.name) : null}
+        </span>
+        {children}
+      </span>
       {selected ? (
         <>
           <span className="selection-guide guide-x" aria-hidden="true" />
           <span className="selection-guide guide-y" aria-hidden="true" />
           <span className="selection-frame" aria-hidden="true" />
-          <span className="selection-rotate" aria-hidden="true" />
+          {hasInsetShapeBounds ? (
+            <span
+              className={`selection-shape-frame ${node.kind === "circle" ? "circle" : ""}`}
+              style={{
+                left: shapeBounds.left,
+                top: shapeBounds.top,
+                right: shapeBounds.right,
+                bottom: shapeBounds.bottom
+              }}
+              aria-hidden="true"
+            />
+          ) : null}
           <span className="selection-handle nw" aria-label="Resize from top left" role="button" onPointerDown={(event) => onResizeStart?.("nw", event)} />
           <span className="selection-handle n" aria-label="Resize from top" role="button" onPointerDown={(event) => onResizeStart?.("n", event)} />
           <span className="selection-handle ne" aria-label="Resize from top right" role="button" onPointerDown={(event) => onResizeStart?.("ne", event)} />
@@ -2115,13 +3019,1010 @@ function CanvasNode({
           <span className="selection-handle w" aria-label="Resize from left" role="button" onPointerDown={(event) => onResizeStart?.("w", event)} />
           <span className="selection-handle sw" aria-label="Resize from bottom left" role="button" onPointerDown={(event) => onResizeStart?.("sw", event)} />
           <span className="selection-handle se" aria-label="Resize from bottom right" role="button" onPointerDown={(event) => onResizeStart?.("se", event)} />
-          <span className="selection-pivot" aria-hidden="true" />
           <span className="selection-size" aria-hidden="true">{round(width)} x {round(height)}</span>
         </>
       ) : null}
-      {node.kind === "text" ? String(node.style.text ?? node.name) : null}
     </div>
   );
+}
+
+function SemanticSvgPreview({
+  project,
+  rootId,
+  focusNodeId,
+  display = "absolute"
+}: {
+  project: StudioProject;
+  rootId: string;
+  focusNodeId?: string;
+  display?: "absolute" | "inline";
+}) {
+  const root = project.nodes[rootId];
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [imageVersion, setImageVersion] = useState(0);
+  const width = root ? nodeWidth(root) : 1;
+  const height = root ? nodeHeight(root) : 1;
+  const layerPolicy = useMemo(() => semanticLayerPolicy(project, rootId, focusNodeId), [focusNodeId, project, rootId]);
+
+  useEffect(() => {
+    preloadSemanticImages(project, rootId, () => setImageVersion((version) => version + 1));
+  }, [project, rootId]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const rootNode = project.nodes[rootId];
+    if (!canvas || !rootNode) return;
+
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.ceil(width * ratio));
+    canvas.height = Math.max(1, Math.ceil(height * ratio));
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    drawNodeLocal(context, project, rootNode, width, height, layerPolicy);
+  }, [height, imageVersion, layerPolicy, project, rootId, width]);
+
+  if (!root) return null;
+  return (
+    <canvas
+      ref={canvasRef}
+      className={`semantic-svg-preview ${display === "inline" ? "inline" : ""}`}
+      data-root-id={rootId}
+      data-focus-node-id={focusNodeId ?? ""}
+      aria-hidden="true"
+    />
+  );
+}
+
+const semanticImageCache = new Map<string, { image: HTMLImageElement; loaded: boolean; failed: boolean }>();
+
+function preloadSemanticImages(project: StudioProject, rootId: string, onChange: () => void) {
+  for (const node of subtreeNodes(project, rootId)) {
+    const url = nodeImageUrl(node);
+    if (!url || semanticImageCache.has(url)) continue;
+    const image = new Image();
+    const record = { image, loaded: false, failed: false };
+    semanticImageCache.set(url, record);
+    image.onload = () => {
+      record.loaded = true;
+      onChange();
+    };
+    image.onerror = () => {
+      record.failed = true;
+      onChange();
+    };
+    image.src = url;
+  }
+}
+
+function subtreeNodes(project: StudioProject, rootId: string) {
+  const nodes: StudioNode[] = [];
+  function visit(nodeId: string) {
+    const node = project.nodes[nodeId];
+    if (!node) return;
+    nodes.push(node);
+    node.childIds.forEach(visit);
+  }
+  visit(rootId);
+  return nodes;
+}
+
+function nodeImageUrl(node: StudioNode) {
+  return node.kind === "image" && typeof node.style.imageUrl === "string" ? node.style.imageUrl : undefined;
+}
+
+function topCanvasAncestorId(project: StudioProject, nodeId: string) {
+  let current: StudioNode | undefined = project.nodes[nodeId];
+  if (current === undefined) return project.rootNodeId;
+
+  while (current !== undefined && current.parentId !== null && current.parentId !== project.rootNodeId) {
+    const parent: StudioNode | undefined = project.nodes[current.parentId];
+    if (parent === undefined) break;
+    current = parent;
+  }
+
+  return current?.id ?? project.rootNodeId;
+}
+
+type SemanticLayerPolicy = {
+  visible: Set<string>;
+  drawable: Set<string>;
+};
+
+function semanticLayerPolicy(project: StudioProject, rootId: string, focusNodeId?: string): SemanticLayerPolicy | undefined {
+  if (!focusNodeId || !project.nodes[focusNodeId]) return undefined;
+
+  if (focusNodeId === rootId) {
+    return { visible: new Set([rootId]), drawable: new Set([rootId]) };
+  }
+
+  const visible = new Set<string>([rootId]);
+  const drawable = new Set<string>();
+  let current: string | null | undefined = focusNodeId;
+  while (current) {
+    visible.add(current);
+    if (current === rootId) break;
+    current = project.nodes[current]?.parentId;
+  }
+
+  function addDescendants(nodeId: string) {
+    drawable.add(nodeId);
+    for (const childId of project.nodes[nodeId]?.childIds ?? []) {
+      visible.add(childId);
+      addDescendants(childId);
+    }
+  }
+  addDescendants(focusNodeId);
+
+  return { visible, drawable };
+}
+
+function drawNodeLocal(
+  context: CanvasRenderingContext2D,
+  project: StudioProject,
+  node: StudioNode,
+  width: number,
+  height: number,
+  layerPolicy?: SemanticLayerPolicy
+) {
+  if (node.style.clip === true) {
+    context.save();
+    context.beginPath();
+    context.rect(0, 0, width, height);
+    context.clip();
+  }
+
+  if (!layerPolicy || layerPolicy.drawable.has(node.id)) {
+    drawNodeShape(context, node, width, height);
+  }
+
+  for (const childId of node.childIds) {
+    const child = project.nodes[childId];
+    if (!child) continue;
+    if (layerPolicy && !layerPolicy.visible.has(child.id)) continue;
+    drawChildNode(context, project, child, width, height, layerPolicy);
+  }
+
+  if (node.style.clip === true) {
+    context.restore();
+  }
+}
+
+function drawChildNode(
+  context: CanvasRenderingContext2D,
+  project: StudioProject,
+  node: StudioNode,
+  parentWidth: number,
+  parentHeight: number,
+  layerPolicy?: SemanticLayerPolicy
+) {
+  const width = nodeWidth(node);
+  const height = nodeHeight(node);
+  const scale = numberValue(node.presentation.scale, 1);
+  const scaleX = scale * numberValue(node.presentation["scale.x"], 1);
+  const scaleY = scale * numberValue(node.presentation["scale.y"], 1);
+  const centerX = parentWidth / 2 + numberValue(node.presentation["offset.x"]);
+  const centerY = parentHeight / 2 + numberValue(node.presentation["offset.y"]);
+  const opacity = clamp(numberValue(node.presentation.opacity, 1), 0, 1);
+  const compositeOperation = canvasCompositeOperation(node.style.blendMode);
+
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate(numberValue(node.presentation.rotation) * Math.PI / 180);
+  context.scale(scaleX, scaleY);
+  context.translate(-width / 2, -height / 2);
+  context.globalAlpha *= opacity;
+  context.globalCompositeOperation = compositeOperation;
+
+  if (shouldDrawIsolatedLayer(node, opacity, compositeOperation)) {
+    const padding = Math.ceil(maxSubtreeEffectPadding(project, node) + 2);
+    const offscreen = document.createElement("canvas");
+    offscreen.width = Math.max(1, Math.ceil(width + padding * 2));
+    offscreen.height = Math.max(1, Math.ceil(height + padding * 2));
+    const offscreenContext = offscreen.getContext("2d");
+    if (offscreenContext) {
+      offscreenContext.translate(padding, padding);
+      drawNodeLocal(offscreenContext, project, node, width, height, layerPolicy);
+      context.drawImage(offscreen, -padding, -padding, width + padding * 2, height + padding * 2);
+    }
+  } else {
+    drawNodeLocal(context, project, node, width, height, layerPolicy);
+  }
+  context.restore();
+}
+
+function shouldDrawIsolatedLayer(node: StudioNode, opacity: number, compositeOperation: GlobalCompositeOperation) {
+  return node.childIds.length > 0 && (opacity < 0.999 || compositeOperation !== "source-over");
+}
+
+function maxSubtreeEffectPadding(project: StudioProject, node: StudioNode): number {
+  const bounds = nodeEffectBounds(node.style);
+  let padding = Math.max(bounds.top, bounds.right, bounds.bottom, bounds.left, renderBlur(node.style) * 2);
+  for (const childId of node.childIds) {
+    const child = project.nodes[childId];
+    if (!child) continue;
+    padding = Math.max(padding, maxSubtreeEffectPadding(project, child));
+  }
+  return padding;
+}
+
+function drawNodeShape(context: CanvasRenderingContext2D, node: StudioNode, width: number, height: number) {
+  if (node.kind === "image") {
+    drawImageNode(context, node, width, height);
+    return;
+  }
+
+  if (drawProceduralGradient(context, node.style, width, height)) {
+    return;
+  }
+
+  const fills = canvasFills(context, node, width, height);
+  const hasFill = fills.length > 0;
+  const strokeWidth = Math.max(0, numberValue(node.style.strokeWidth, 0));
+  const hasStroke = strokeWidth > 0;
+
+  if (!hasFill && !hasStroke && node.kind !== "text") return;
+
+  const blur = renderBlur(node.style);
+  const filterBox = nodeFilterBox(node.style);
+  if (filterBox && node.kind !== "text") {
+    const boxFills = canvasFills(context, node, filterBox.width, filterBox.height);
+    const source = document.createElement("canvas");
+    source.width = Math.max(1, Math.ceil(filterBox.width));
+    source.height = Math.max(1, Math.ceil(filterBox.height));
+    const sourceContext = source.getContext("2d");
+    if (sourceContext) {
+      drawNodeShapeContent(sourceContext, node, filterBox.width, filterBox.height, boxFills, boxFills.length > 0, strokeWidth, hasStroke);
+      const output = document.createElement("canvas");
+      output.width = source.width;
+      output.height = source.height;
+      const outputContext = output.getContext("2d");
+      context.save();
+      if (outputContext) {
+        if (blur > 0) outputContext.filter = `blur(${blur}px)`;
+        outputContext.drawImage(source, 0, 0, filterBox.width, filterBox.height);
+        context.drawImage(
+          output,
+          filterBox.cropX,
+          filterBox.cropY,
+          width,
+          height,
+          0,
+          0,
+          width,
+          height
+        );
+      } else {
+        if (blur > 0) context.filter = `blur(${blur}px)`;
+        context.drawImage(source, -filterBox.cropX, -filterBox.cropY, filterBox.width, filterBox.height);
+      }
+      context.restore();
+      return;
+    }
+  }
+
+  if (blur > 0 && node.kind !== "text") {
+    const offscreen = document.createElement("canvas");
+    offscreen.width = Math.max(1, Math.ceil(width));
+    offscreen.height = Math.max(1, Math.ceil(height));
+    const offscreenContext = offscreen.getContext("2d");
+    if (offscreenContext) {
+      drawNodeShapeContent(offscreenContext, node, width, height, fills, hasFill, strokeWidth, hasStroke);
+      context.save();
+      context.filter = `blur(${blur}px)`;
+      context.drawImage(offscreen, 0, 0, width, height);
+      context.restore();
+      return;
+    }
+  }
+
+  drawNodeShapeContent(context, node, width, height, fills, hasFill, strokeWidth, hasStroke);
+}
+
+function nodeFilterBox(style: Record<string, unknown>) {
+  const width = numberValue(style["figmaFilterBox.width"], Number.NaN);
+  const height = numberValue(style["figmaFilterBox.height"], Number.NaN);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
+
+  return {
+    width,
+    height,
+    cropX: numberValue(style["figmaFilterBox.cropX"], 0),
+    cropY: numberValue(style["figmaFilterBox.cropY"], 0)
+  };
+}
+
+function drawImageNode(context: CanvasRenderingContext2D, node: StudioNode, width: number, height: number) {
+  const url = nodeImageUrl(node);
+  if (!url) return;
+  const record = semanticImageCache.get(url);
+  if (!record?.loaded || record.failed) return;
+
+  const opacity = clamp(numberValue(node.style.imageOpacity, 1), 0, 1);
+  context.save();
+  context.globalAlpha *= opacity;
+  context.drawImage(record.image, 0, 0, width, height);
+  context.restore();
+}
+
+function drawNodeShapeContent(
+  context: CanvasRenderingContext2D,
+  node: StudioNode,
+  width: number,
+  height: number,
+  fills: CanvasPaint[],
+  hasFill: boolean,
+  strokeWidth: number,
+  hasStroke: boolean
+) {
+  context.save();
+
+  if (node.kind === "path") {
+    const viewBoxWidth = Math.max(numberValue(node.style.viewBoxWidth, width), 0.0001);
+    const viewBoxHeight = Math.max(numberValue(node.style.viewBoxHeight, height), 0.0001);
+    context.save();
+    context.scale(width / viewBoxWidth, height / viewBoxHeight);
+    const path = new Path2D(String(node.style.pathData ?? ""));
+    if (hasFill) {
+      for (const fill of fills) {
+        fillCanvasPath(context, path, node, viewBoxWidth, viewBoxHeight, fill.paint, fill.fill);
+      }
+    }
+    if (hasStroke) {
+      context.strokeStyle = String(node.style.strokeColor ?? "#E0F2FE");
+      context.lineWidth = strokeWidth;
+      context.stroke(path);
+    }
+    context.restore();
+    context.restore();
+    return;
+  } else if (node.kind === "text") {
+    context.filter = "none";
+    context.fillStyle = String(node.style.foregroundColor ?? "#FFFFFF");
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = "600 16px Inter, system-ui, sans-serif";
+    context.fillText(String(node.style.text ?? node.name), width / 2, height / 2);
+    context.restore();
+    return;
+  }
+
+  const path = canvasNodePath(node, width, height);
+  if (hasFill) {
+    for (const fill of fills) {
+      fillCanvasPath(context, path, node, width, height, fill.paint, fill.fill);
+    }
+  }
+
+  if (hasStroke) {
+    context.strokeStyle = String(node.style.strokeColor ?? "#E0F2FE");
+    context.lineWidth = strokeWidth;
+    context.stroke(path);
+  }
+
+  context.restore();
+}
+
+function canvasNodePath(node: StudioNode, width: number, height: number) {
+  const path = new Path2D();
+  const shapeBounds = nodeShapeBounds(node.style);
+  const shapeX = shapeBounds.left;
+  const shapeY = shapeBounds.top;
+  const shapeWidth = Math.max(0.0001, width - shapeBounds.left - shapeBounds.right);
+  const shapeHeight = Math.max(0.0001, height - shapeBounds.top - shapeBounds.bottom);
+  if (node.kind === "circle") {
+    path.ellipse(shapeX + shapeWidth / 2, shapeY + shapeHeight / 2, shapeWidth / 2, shapeHeight / 2, 0, 0, Math.PI * 2);
+  } else {
+    const radius = node.kind === "roundedRectangle" || node.kind === "zstack" || node.kind === "vstack" || node.kind === "hstack"
+      ? numberValue(node.style.cornerRadius, 0)
+      : 0;
+    roundedCanvasRect(path, shapeX, shapeY, shapeWidth, shapeHeight, radius);
+  }
+  return path;
+}
+
+function fillCanvasPath(
+  context: CanvasRenderingContext2D,
+  path: Path2D,
+  node: StudioNode,
+  width: number,
+  height: number,
+  fill: string | CanvasGradient,
+  sourceFill?: MotionFill
+) {
+  const gradientFill = sourceFill ?? node.fills?.[0];
+  const transform = transformedGradientMatrix(gradientFill, width, height);
+  if (gradientFill?.type === "radialGradient" && transform) {
+    const gradientCanvas = transformedRadialGradientCanvas(gradientFill, width, height, transform);
+    context.save();
+    context.clip(path);
+    if (gradientCanvas) {
+      context.drawImage(gradientCanvas, 0, 0, width, height);
+    } else {
+      context.transform(...transform);
+      const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+      for (const stop of gradientFill.colors) {
+        gradient.addColorStop(stop.position, colorWithOpacity(stop.color, (stop.opacity ?? 1) * (gradientFill.opacity ?? 1)));
+      }
+      context.fillStyle = gradient;
+      context.fillRect(-4, -4, 8, 8);
+    }
+    context.restore();
+    return;
+  }
+
+  context.fillStyle = fill;
+  context.fill(path);
+}
+
+type CanvasPaint = {
+  paint: string | CanvasGradient;
+  fill?: MotionFill;
+};
+
+function canvasFills(context: CanvasRenderingContext2D, node: StudioNode, width: number, height: number): CanvasPaint[] {
+  const fills = node.fills?.length
+    ? node.fills
+    : typeof node.style.backgroundColor === "string"
+      ? [solidFill(String(node.style.backgroundColor))]
+      : [];
+
+  const paints: CanvasPaint[] = [];
+  for (const fill of fills) {
+    const paint = canvasFill(context, node, width, height, fill);
+    if (paint !== undefined) paints.push({ paint, fill });
+  }
+  return paints;
+}
+
+function canvasFill(context: CanvasRenderingContext2D, node: StudioNode, width: number, height: number, fill: MotionFill): string | CanvasGradient | undefined {
+  const shapeBounds = nodeShapeBounds(node.style);
+  const fillX = shapeBounds.left;
+  const fillY = shapeBounds.top;
+  const fillWidth = Math.max(0.0001, width - shapeBounds.left - shapeBounds.right);
+  const fillHeight = Math.max(0.0001, height - shapeBounds.top - shapeBounds.bottom);
+
+  if (fill.type === "solid") return colorWithOpacity(fill.color, fill.opacity ?? 1);
+
+  if (fill.type === "radialGradient") {
+    const transform = transformedGradientMatrix(fill, width, height);
+    const centerX = transform ? transform[4] : fillX + (fill.centerX ?? 0.5) * fillWidth;
+    const centerY = transform ? transform[5] : fillY + (fill.centerY ?? 0.5) * fillHeight;
+    const radius = transform
+      ? Math.max(Math.hypot(transform[0], transform[1]), Math.hypot(transform[2], transform[3]), 1)
+      : fill.radius ?? Math.max(fillWidth, fillHeight) * 0.7;
+    const gradient = context.createRadialGradient(
+      centerX,
+      centerY,
+      0,
+      centerX,
+      centerY,
+      radius
+    );
+    for (const stop of fill.colors) {
+      gradient.addColorStop(stop.position, colorWithOpacity(stop.color, (stop.opacity ?? 1) * (fill.opacity ?? 1)));
+    }
+    return gradient;
+  }
+
+  const angle = ((fill.angle ?? 90) - 90) * Math.PI / 180;
+  const dx = Math.cos(angle) * fillWidth / 2;
+  const dy = Math.sin(angle) * fillHeight / 2;
+  const centerX = fillX + fillWidth / 2;
+  const centerY = fillY + fillHeight / 2;
+  const gradient = context.createLinearGradient(centerX - dx, centerY - dy, centerX + dx, centerY + dy);
+  for (const stop of fill.colors) {
+    gradient.addColorStop(stop.position, colorWithOpacity(stop.color, (stop.opacity ?? 1) * (fill.opacity ?? 1)));
+  }
+  return gradient;
+}
+
+function transformedGradientMatrix(fill: MotionFill | undefined, width: number, height: number): [number, number, number, number, number, number] | undefined {
+  if (!fill || fill.type !== "radialGradient" || !Array.isArray(fill.gradientTransform) || fill.gradientTransform.length !== 6) {
+    return undefined;
+  }
+
+  return fill.gradientTransform.map((value) => numberValue(value)) as [number, number, number, number, number, number];
+}
+
+type ProceduralGradientField = {
+  centerX: number;
+  centerY: number;
+  radiusX: number;
+  radiusY: number;
+  centerXMode: "proportional" | "top" | "bottom" | "center";
+  centerYMode: "proportional" | "top" | "bottom" | "center";
+  radiusXMode: "proportional" | "width" | "height" | "minDimension" | "maxDimension" | "fixed";
+  radiusYMode: "proportional" | "width" | "height" | "minDimension" | "maxDimension" | "fixed";
+  blurMode: "scale" | "fixed";
+  blur: number;
+  opacity: number;
+  stops: Array<{ color: string; position: number; opacity: number }>;
+};
+
+type ProceduralGradientRecipe = {
+  referenceWidth: number;
+  referenceHeight: number;
+  fields: ProceduralGradientField[];
+  fadeMode: "relative" | "fixed";
+  fadeStops: Array<{ color: string; position: number; opacity: number }>;
+};
+
+const hotelActiveProceduralGradientRecipe: ProceduralGradientRecipe = {
+  referenceWidth: 375,
+  referenceHeight: 250,
+  fields: [
+    {
+      centerX: 110,
+      centerY: 192.5,
+      radiusX: 343,
+      radiusY: 217.5,
+      centerXMode: "proportional",
+      centerYMode: "bottom",
+      radiusXMode: "width",
+      radiusYMode: "fixed",
+      blurMode: "fixed",
+      blur: 50,
+      opacity: 0.6000000238418579,
+      stops: [
+        { color: "#7FDEFF", position: 0, opacity: 0.800000011920929 },
+        { color: "#7FDEFF", position: 1, opacity: 0 }
+      ]
+    },
+    {
+      centerX: 265,
+      centerY: 258.5,
+      radiusX: 266,
+      radiusY: 258.5,
+      centerXMode: "proportional",
+      centerYMode: "bottom",
+      radiusXMode: "width",
+      radiusYMode: "fixed",
+      blurMode: "fixed",
+      blur: 50,
+      opacity: 0.6000000238418579,
+      stops: [
+        { color: "#FFA800", position: 0, opacity: 1 },
+        { color: "#FC790D", position: 0.34, opacity: 1 },
+        { color: "#FF47D6", position: 0.64, opacity: 1 },
+        { color: "#FF47D6", position: 1, opacity: 0 }
+      ]
+    }
+  ],
+  fadeMode: "fixed",
+  fadeStops: [
+    { color: "#FFFFFF", position: 0, opacity: 1 },
+    { color: "#FFFFFF", position: 0.26, opacity: 0.76 },
+    { color: "#FFFFFF", position: 0.58, opacity: 0 }
+  ]
+};
+
+function isProceduralGradient(style: Record<string, unknown>) {
+  return proceduralGradientRecipe(style) !== undefined;
+}
+
+function proceduralGradientStyle(name: string, recipe: ProceduralGradientRecipe): Record<string, string | number> {
+  const style: Record<string, string | number> = {
+    proceduralGradient: name,
+    "proceduralGradient.referenceWidth": recipe.referenceWidth,
+    "proceduralGradient.referenceHeight": recipe.referenceHeight,
+    "proceduralGradient.fieldCount": recipe.fields.length,
+    "proceduralGradient.fadeMode": recipe.fadeMode,
+    "proceduralGradient.fadeStopCount": recipe.fadeStops.length
+  };
+
+  recipe.fields.forEach((field, index) => {
+    const fieldKey = `proceduralGradient.field.${index}`;
+    style[`${fieldKey}.centerX`] = field.centerX;
+    style[`${fieldKey}.centerY`] = field.centerY;
+    style[`${fieldKey}.radiusX`] = field.radiusX;
+    style[`${fieldKey}.radiusY`] = field.radiusY;
+    style[`${fieldKey}.centerXMode`] = field.centerXMode;
+    style[`${fieldKey}.centerYMode`] = field.centerYMode;
+    style[`${fieldKey}.radiusXMode`] = field.radiusXMode;
+    style[`${fieldKey}.radiusYMode`] = field.radiusYMode;
+    style[`${fieldKey}.blurMode`] = field.blurMode;
+    style[`${fieldKey}.blur`] = field.blur;
+    style[`${fieldKey}.opacity`] = field.opacity;
+    style[`${fieldKey}.stopCount`] = field.stops.length;
+    field.stops.forEach((stop, stopIndex) => {
+      const stopKey = `${fieldKey}.stop.${stopIndex}`;
+      style[`${stopKey}.color`] = stop.color;
+      style[`${stopKey}.position`] = stop.position;
+      style[`${stopKey}.opacity`] = stop.opacity;
+    });
+  });
+
+  recipe.fadeStops.forEach((stop, index) => {
+    const stopKey = `proceduralGradient.fadeStop.${index}`;
+    style[`${stopKey}.color`] = stop.color;
+    style[`${stopKey}.position`] = stop.position;
+    style[`${stopKey}.opacity`] = stop.opacity;
+  });
+
+  return style;
+}
+
+function proceduralGradientRecipe(style: Record<string, unknown>): ProceduralGradientRecipe | undefined {
+  if (typeof style.proceduralGradient !== "string") return undefined;
+  const referenceWidth = numberValue(style["proceduralGradient.referenceWidth"], Number.NaN);
+  const referenceHeight = numberValue(style["proceduralGradient.referenceHeight"], Number.NaN);
+  const fieldCount = Math.max(0, Math.floor(numberValue(style["proceduralGradient.fieldCount"], 0)));
+  if (!Number.isFinite(referenceWidth) || !Number.isFinite(referenceHeight) || referenceWidth <= 0 || referenceHeight <= 0 || fieldCount === 0) {
+    return undefined;
+  }
+
+  const fields: ProceduralGradientField[] = [];
+  for (let index = 0; index < fieldCount; index += 1) {
+    const fieldKey = `proceduralGradient.field.${index}`;
+    const stopCount = Math.max(0, Math.floor(numberValue(style[`${fieldKey}.stopCount`], 0)));
+    const stops = [];
+    for (let stopIndex = 0; stopIndex < stopCount; stopIndex += 1) {
+      const stopKey = `${fieldKey}.stop.${stopIndex}`;
+      const color = typeof style[`${stopKey}.color`] === "string" ? String(style[`${stopKey}.color`]) : "#FFFFFF";
+      stops.push({
+        color,
+        position: clamp(numberValue(style[`${stopKey}.position`], 0), 0, 1),
+        opacity: clamp(numberValue(style[`${stopKey}.opacity`], 1), 0, 1)
+      });
+    }
+    if (stops.length < 2) continue;
+    fields.push({
+      centerX: numberValue(style[`${fieldKey}.centerX`], referenceWidth / 2),
+      centerY: numberValue(style[`${fieldKey}.centerY`], referenceHeight / 2),
+      radiusX: Math.max(1, numberValue(style[`${fieldKey}.radiusX`], referenceWidth)),
+      radiusY: Math.max(1, numberValue(style[`${fieldKey}.radiusY`], referenceHeight)),
+      centerXMode: proceduralAnchorMode(style[`${fieldKey}.centerXMode`]),
+      centerYMode: proceduralAnchorMode(style[`${fieldKey}.centerYMode`]),
+      radiusXMode: proceduralSizeMode(style[`${fieldKey}.radiusXMode`]),
+      radiusYMode: proceduralSizeMode(style[`${fieldKey}.radiusYMode`]),
+      blurMode: style[`${fieldKey}.blurMode`] === "fixed" ? "fixed" : "scale",
+      blur: Math.max(0, numberValue(style[`${fieldKey}.blur`], 0)),
+      opacity: clamp(numberValue(style[`${fieldKey}.opacity`], 1), 0, 1),
+      stops
+    });
+  }
+
+  if (fields.length === 0) return undefined;
+  const fadeStopCount = Math.max(0, Math.floor(numberValue(style["proceduralGradient.fadeStopCount"], 0)));
+  const fadeStops = [];
+  for (let index = 0; index < fadeStopCount; index += 1) {
+    const stopKey = `proceduralGradient.fadeStop.${index}`;
+    const color = typeof style[`${stopKey}.color`] === "string" ? String(style[`${stopKey}.color`]) : "#FFFFFF";
+    fadeStops.push({
+      color,
+      position: clamp(numberValue(style[`${stopKey}.position`], 0), 0, 1),
+      opacity: clamp(numberValue(style[`${stopKey}.opacity`], 1), 0, 1)
+    });
+  }
+
+  return {
+    referenceWidth,
+    referenceHeight,
+    fields,
+    fadeMode: style["proceduralGradient.fadeMode"] === "fixed" ? "fixed" : "relative",
+    fadeStops
+  };
+}
+
+function proceduralAnchorMode(value: unknown): ProceduralGradientField["centerXMode"] {
+  if (value === "top" || value === "bottom" || value === "center") return value;
+  return "proportional";
+}
+
+function proceduralSizeMode(value: unknown): ProceduralGradientField["radiusXMode"] {
+  if (value === "width" || value === "height" || value === "minDimension" || value === "maxDimension" || value === "fixed") {
+    return value;
+  }
+  return "proportional";
+}
+
+function proceduralGradientCssBackground(style: Record<string, unknown>) {
+  const recipe = proceduralGradientRecipe(style);
+  if (!recipe) return undefined;
+  const { referenceWidth, referenceHeight, fields, fadeMode, fadeStops } = recipe;
+  const layers = [...fields]
+    .reverse()
+    .map((field) => {
+      const stops = field.stops
+        .map((stop) => colorWithOpacity(stop.color, stop.opacity * field.opacity) + ` ${Math.round(stop.position * 100)}%`)
+        .join(", ");
+      return [
+        "radial-gradient(",
+        `ellipse ${round((field.radiusX / referenceWidth) * 100)}% ${round((field.radiusY / referenceHeight) * 100)}% `,
+        `at ${round((field.centerX / referenceWidth) * 100)}% ${round((field.centerY / referenceHeight) * 100)}%, `,
+        stops,
+        ")"
+      ].join("");
+    });
+  const fade = fadeStops.length > 0
+    ? `linear-gradient(180deg, ${fadeStops.map((stop) => `${colorWithOpacity(stop.color, stop.opacity)} ${fadeMode === "fixed" ? `${round(stop.position * referenceHeight)}px` : `${Math.round(stop.position * 100)}%`}`).join(", ")})`
+    : undefined;
+  return [...(fade ? [fade] : []), ...layers, "#FFFFFF"].join(", ");
+}
+
+function drawProceduralGradient(context: CanvasRenderingContext2D, style: Record<string, unknown>, width: number, height: number) {
+  const recipe = proceduralGradientRecipe(style);
+  if (!recipe) return false;
+
+  const { referenceWidth, referenceHeight, fields, fadeMode, fadeStops } = recipe;
+  const scaleX = width / referenceWidth;
+  const scaleY = height / referenceHeight;
+  const minScale = Math.min(scaleX, scaleY);
+  const maxScale = Math.max(scaleX, scaleY);
+
+  context.save();
+  context.beginPath();
+  context.rect(0, 0, width, height);
+  context.clip();
+  context.fillStyle = "#FFFFFF";
+  context.fillRect(0, 0, width, height);
+
+  for (const field of fields) {
+    drawProceduralGradientField(context, field, { width, height, referenceWidth, referenceHeight, scaleX, scaleY, minScale, maxScale });
+  }
+
+  if (fadeStops.length > 0) {
+    const fade = context.createLinearGradient(0, 0, 0, height);
+    for (const stop of fadeStops) {
+      const position = fadeMode === "fixed" ? clamp((stop.position * referenceHeight) / height, 0, 1) : stop.position;
+      fade.addColorStop(position, colorWithOpacity(stop.color, stop.opacity));
+    }
+    context.fillStyle = fade;
+    context.fillRect(0, 0, width, height);
+  }
+  context.restore();
+  return true;
+}
+
+function drawProceduralGradientField(
+  context: CanvasRenderingContext2D,
+  field: ProceduralGradientField,
+  metrics: {
+    width: number;
+    height: number;
+    referenceWidth: number;
+    referenceHeight: number;
+    scaleX: number;
+    scaleY: number;
+    minScale: number;
+    maxScale: number;
+  }
+) {
+  const centerX = resolveProceduralPosition(field.centerX, field.centerXMode, metrics.width, metrics.referenceWidth, metrics.scaleX);
+  const centerY = resolveProceduralPosition(field.centerY, field.centerYMode, metrics.height, metrics.referenceHeight, metrics.scaleY);
+  const radiusX = Math.max(resolveProceduralSize(field.radiusX, field.radiusXMode, metrics), 1);
+  const radiusY = Math.max(resolveProceduralSize(field.radiusY, field.radiusYMode, metrics), 1);
+  const blurScale = field.blurMode === "fixed" ? 1 : metrics.minScale;
+  const gradient = context.createRadialGradient(0, 0, 0, 0, 0, 1);
+  for (const stop of field.stops) {
+    gradient.addColorStop(stop.position, colorWithOpacity(stop.color, stop.opacity * field.opacity));
+  }
+
+  context.save();
+  context.filter = `blur(${round(field.blur * blurScale)}px)`;
+  context.translate(centerX, centerY);
+  context.scale(radiusX, radiusY);
+  context.fillStyle = gradient;
+  context.fillRect(-2, -2, 4, 4);
+  context.restore();
+}
+
+function resolveProceduralPosition(value: number, mode: ProceduralGradientField["centerXMode"], size: number, referenceSize: number, scale: number) {
+  if (mode === "top") return value;
+  if (mode === "bottom") return size - (referenceSize - value);
+  if (mode === "center") return size / 2 + (value - referenceSize / 2);
+  return value * scale;
+}
+
+function resolveProceduralSize(
+  value: number,
+  mode: ProceduralGradientField["radiusXMode"],
+  metrics: { scaleX: number; scaleY: number; minScale: number; maxScale: number }
+) {
+  if (mode === "fixed") return value;
+  if (mode === "width") return value * metrics.scaleX;
+  if (mode === "height") return value * metrics.scaleY;
+  if (mode === "minDimension") return value * metrics.minScale;
+  if (mode === "maxDimension") return value * metrics.maxScale;
+  return value * ((metrics.scaleX + metrics.scaleY) / 2);
+}
+
+function transformedRadialGradientCanvas(
+  fill: Extract<MotionFill, { type: "radialGradient" }>,
+  width: number,
+  height: number,
+  transform: [number, number, number, number, number, number]
+) {
+  const ratio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+  const rasterWidth = Math.max(1, Math.ceil(width * ratio));
+  const rasterHeight = Math.max(1, Math.ceil(height * ratio));
+  const [a, b, c, d, e, f] = transform;
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < 0.000001) return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = rasterWidth;
+  canvas.height = rasterHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  const image = context.createImageData(rasterWidth, rasterHeight);
+  const data = image.data;
+  const stops = [...fill.colors]
+    .map((stop) => ({
+      position: clamp(stop.position, 0, 1),
+      color: parseHexColor(stop.color),
+      opacity: clamp((stop.opacity ?? 1) * (fill.opacity ?? 1), 0, 1)
+    }))
+    .sort((left, right) => left.position - right.position);
+
+  if (stops.length === 0) return null;
+
+  const invA = d / determinant;
+  const invB = -b / determinant;
+  const invC = -c / determinant;
+  const invD = a / determinant;
+  const scaleX = width / rasterWidth;
+  const scaleY = height / rasterHeight;
+
+  for (let y = 0; y < rasterHeight; y += 1) {
+    const nodeY = (y + 0.5) * scaleY;
+    for (let x = 0; x < rasterWidth; x += 1) {
+      const nodeX = (x + 0.5) * scaleX;
+      const localX = nodeX - e;
+      const localY = nodeY - f;
+      const gx = invA * localX + invC * localY;
+      const gy = invB * localX + invD * localY;
+      const color = sampleGradientStops(stops, Math.hypot(gx, gy));
+      const index = (y * rasterWidth + x) * 4;
+      data[index] = color.r;
+      data[index + 1] = color.g;
+      data[index + 2] = color.b;
+      data[index + 3] = Math.round(color.a * 255);
+    }
+  }
+
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function parseHexColor(color: string) {
+  const normalized = color.trim().replace("#", "");
+  if (!/^[0-9A-Fa-f]{6}$/.test(normalized)) {
+    return { r: 255, g: 255, b: 255 };
+  }
+
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function sampleGradientStops(
+  stops: Array<{ position: number; color: { r: number; g: number; b: number }; opacity: number }>,
+  position: number
+) {
+  const first = stops[0];
+  if (!first) return { r: 255, g: 255, b: 255, a: 0 };
+
+  if (position <= first.position) {
+    return { r: first.color.r, g: first.color.g, b: first.color.b, a: first.opacity };
+  }
+
+  for (let index = 1; index < stops.length; index += 1) {
+    const previous = stops[index - 1];
+    const next = stops[index];
+    if (!previous || !next) continue;
+    if (position <= next.position) {
+      const span = Math.max(next.position - previous.position, 0.000001);
+      const progress = clamp((position - previous.position) / span, 0, 1);
+      return {
+        r: Math.round(mix(previous.color.r, next.color.r, progress)),
+        g: Math.round(mix(previous.color.g, next.color.g, progress)),
+        b: Math.round(mix(previous.color.b, next.color.b, progress)),
+        a: mix(previous.opacity, next.opacity, progress)
+      };
+    }
+  }
+
+  const last = stops[stops.length - 1] ?? first;
+  return { r: last.color.r, g: last.color.g, b: last.color.b, a: last.opacity };
+}
+
+function mix(from: number, to: number, progress: number) {
+  return from + (to - from) * progress;
+}
+
+function nodeEffectBounds(style: Record<string, unknown>) {
+  const raw = style.effectBounds;
+  if (typeof raw === "number") {
+    const value = Math.max(0, raw);
+    return { top: value, right: value, bottom: value, left: value };
+  }
+  if (raw && typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    return {
+      top: numberValue(record.top, 0),
+      right: numberValue(record.right, 0),
+      bottom: numberValue(record.bottom, 0),
+      left: numberValue(record.left, 0)
+    };
+  }
+  const explicit = {
+    top: numberValue(style["effectBounds.top"], Number.NaN),
+    right: numberValue(style["effectBounds.right"], Number.NaN),
+    bottom: numberValue(style["effectBounds.bottom"], Number.NaN),
+    left: numberValue(style["effectBounds.left"], Number.NaN)
+  };
+  if (Object.values(explicit).some(Number.isFinite)) {
+    return {
+      top: Number.isFinite(explicit.top) ? explicit.top : 0,
+      right: Number.isFinite(explicit.right) ? explicit.right : 0,
+      bottom: Number.isFinite(explicit.bottom) ? explicit.bottom : 0,
+      left: Number.isFinite(explicit.left) ? explicit.left : 0
+    };
+  }
+  const fallback = renderBlur(style) * 2;
+  return { top: fallback, right: fallback, bottom: fallback, left: fallback };
+}
+
+function nodeShapeBounds(style: Record<string, unknown>) {
+  const raw = style.shapeBounds;
+  if (typeof raw === "number") {
+    const value = Math.max(0, raw);
+    return { top: value, right: value, bottom: value, left: value };
+  }
+  if (raw && typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    return {
+      top: Math.max(0, numberValue(record.top, 0)),
+      right: Math.max(0, numberValue(record.right, 0)),
+      bottom: Math.max(0, numberValue(record.bottom, 0)),
+      left: Math.max(0, numberValue(record.left, 0))
+    };
+  }
+  const explicit = {
+    top: numberValue(style["shapeBounds.top"], Number.NaN),
+    right: numberValue(style["shapeBounds.right"], Number.NaN),
+    bottom: numberValue(style["shapeBounds.bottom"], Number.NaN),
+    left: numberValue(style["shapeBounds.left"], Number.NaN)
+  };
+  if (Object.values(explicit).some(Number.isFinite)) {
+    return {
+      top: Number.isFinite(explicit.top) ? Math.max(0, explicit.top) : 0,
+      right: Number.isFinite(explicit.right) ? Math.max(0, explicit.right) : 0,
+      bottom: Number.isFinite(explicit.bottom) ? Math.max(0, explicit.bottom) : 0,
+      left: Number.isFinite(explicit.left) ? Math.max(0, explicit.left) : 0
+    };
+  }
+  return { top: 0, right: 0, bottom: 0, left: 0 };
+}
+
+function roundedCanvasRect(context: CanvasRenderingContext2D | Path2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(Math.max(radius, 0), width / 2, height / 2);
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+}
+
+function canvasCompositeOperation(value: unknown): GlobalCompositeOperation {
+  if (value === "screen") return "screen";
+  if (value === "colorDodge" || value === "color-dodge") return "color-dodge";
+  if (value === "plusLighter" || value === "plus-lighter") return "lighter";
+  if (value === "multiply") return "multiply";
+  return "source-over";
 }
 
 function PreviewVisualNode({ visual }: { visual: PreviewVisual }) {
@@ -2193,7 +4094,62 @@ function loadStoredPanelWidth(key: string, fallback: number, min: number, max: n
   return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
 }
 
+function buildDesignCodePanel(
+  project: StudioProject,
+  selectedNode: StudioNode | undefined,
+  selectedComponent: StudioComponent | undefined,
+  runtimeJson: string
+) {
+  const component = selectedComponent ?? (selectedNode?.componentId ? project.components[selectedNode.componentId] : undefined);
+
+  if (component) {
+    return {
+      title: selectedComponent ? "Main Component JSON" : "Component Instance JSON",
+      body: formatJson({
+        component,
+        instance: selectedNode?.componentId === component.id ? selectedNode : undefined,
+        runtimeExport: selectedNode ? {
+          id: selectedNode.id,
+          kind: selectedNode.kind,
+          roles: [...selectedNode.roles].sort(),
+          layout: selectedNode.layout,
+          style: selectedNode.style,
+          fills: selectedNode.fills ?? [],
+          presentation: selectedNode.presentation,
+          children: selectedNode.childIds
+        } : undefined
+      })
+    };
+  }
+
+  if (selectedNode) {
+    return {
+      title: "Layer Runtime JSON",
+      body: formatJson({
+        node: selectedNode,
+        runtimeExport: {
+          id: selectedNode.id,
+          kind: selectedNode.kind,
+          roles: [...selectedNode.roles].sort(),
+          layout: selectedNode.layout,
+          style: selectedNode.style,
+          fills: selectedNode.fills ?? [],
+          presentation: selectedNode.presentation,
+          children: selectedNode.childIds
+        }
+      })
+    };
+  }
+
+  return {
+    title: "Runtime JSON",
+    body: runtimeJson
+  };
+}
+
 function normalizeLoadedProject(project: StudioProject) {
+  project = dedupeVoiceGradientAssets(project);
+  project = removeOrphanNodes(project);
   if (project.id !== orbPlaygroundProject.id) return project;
   const selection = project.editor?.selection ?? [];
   if (selection.length === 1 && selection[0] === "orb") {
@@ -2205,8 +4161,141 @@ function normalizeLoadedProject(project: StudioProject) {
   return project;
 }
 
+function removeOrphanNodes(project: StudioProject) {
+  const next = cloneProject(project);
+  let changed = false;
+  let removed = true;
+
+  while (removed) {
+    removed = false;
+    for (const node of Object.values(next.nodes)) {
+      if (node.id === next.rootNodeId || node.parentId === null || node.parentId === undefined || next.nodes[node.parentId]) continue;
+      removeNodeMotionReferences(next, node.id);
+      delete next.nodes[node.id];
+      changed = true;
+      removed = true;
+    }
+  }
+
+  if (!changed) return project;
+
+  const existingIds = new Set(Object.keys(next.nodes));
+  for (const node of Object.values(next.nodes)) {
+    node.childIds = node.childIds.filter((childId) => existingIds.has(childId));
+  }
+  if (next.editor?.selection?.some((nodeId) => !existingIds.has(nodeId))) {
+    next.editor = { ...next.editor, viewportPreset: next.editor.viewportPreset ?? "iphone", selection: [] };
+  }
+  saveStoredProject(next);
+  return next;
+}
+
+function componentLibraryItems(project: StudioProject, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const components = Object.values(project.components);
+  if (!normalizedQuery) return components;
+
+  return components.filter((component) => {
+    const searchable = [
+      component.name,
+      component.id,
+      component.kind ?? "",
+      ...(component.roles ?? []),
+      ...componentLayerAssets(component).map((node) => `${node.name} ${node.kind} ${node.roles.join(" ")}`)
+    ].join(" ").toLowerCase();
+    return searchable.includes(normalizedQuery);
+  });
+}
+
+function dedupeVoiceGradientAssets(project: StudioProject) {
+  const entries = Object.entries(project.components).filter(([, component]) => component.name === "Voice Gradient" || component.roles?.includes("voiceGradient"));
+  if (entries.length === 0) return project;
+
+  const canonicalId = "voiceGradient";
+  const canonical = project.components[canonicalId] ?? entries[0]?.[1] ?? voiceGradientComponent(canonicalId);
+  const previousCanonicalId = canonical.id;
+  canonical.id = canonicalId;
+  retargetComponentTemplateRoles(canonical, previousCanonicalId, canonicalId);
+  canonical.roles = uniqueStrings([...(canonical.roles ?? []), "voiceGradient", `component:${canonicalId}`]);
+
+  const duplicateIds = entries.map(([id]) => id).filter((id) => id !== canonicalId);
+  if (duplicateIds.length === 0 && project.components[canonicalId] !== undefined) return project;
+
+  const next = cloneProject(project);
+  next.components[canonicalId] = canonical;
+  for (const duplicateId of duplicateIds) {
+    delete next.components[duplicateId];
+  }
+  for (const node of Object.values(next.nodes)) {
+    if (duplicateIds.includes(node.componentId ?? "")) node.componentId = canonicalId;
+    node.roles = uniqueStrings(node.roles.map((role) => duplicateIds.includes(role.replace("component:", "")) ? `component:${canonicalId}` : role));
+  }
+  next.roles[`component:${canonicalId}`] = { id: `component:${canonicalId}`, name: `component:${canonicalId}` };
+  for (const duplicateId of duplicateIds) {
+    delete next.roles[`component:${duplicateId}`];
+  }
+  return next;
+}
+
 function saveStoredProject(project: StudioProject) {
   window.localStorage.setItem(storageKey, JSON.stringify(project));
+}
+
+function rootBackgroundColor(project: StudioProject) {
+  const value = project.nodes[project.rootNodeId]?.style.backgroundColor;
+  return typeof value === "string" ? safeHex(value, "#0B1020") : "#0B1020";
+}
+
+function canvasPreviewBackgroundStyle(mode: CanvasPreviewBackground, deviceColor: string): React.CSSProperties {
+  if (mode === "checker") {
+    return {
+      backgroundColor: "#FFFFFF",
+      backgroundImage: [
+        "linear-gradient(45deg, rgba(148, 163, 184, 0.42) 25%, transparent 25%)",
+        "linear-gradient(-45deg, rgba(148, 163, 184, 0.42) 25%, transparent 25%)",
+        "linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.42) 75%)",
+        "linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.42) 75%)"
+      ].join(", "),
+      backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+      backgroundSize: "16px 16px"
+    };
+  }
+
+  return {
+    backgroundColor: mode === "black" ? "#000000" : mode === "white" ? "#FFFFFF" : deviceColor,
+    backgroundImage: "none",
+    backgroundPosition: "0 0",
+    backgroundSize: "auto"
+  };
+}
+
+function previewBackgroundSwatchStyle(mode: CanvasPreviewBackground, deviceColor: string): React.CSSProperties {
+  if (mode === "checker") {
+    return {
+      ...canvasPreviewBackgroundStyle(mode, deviceColor),
+      backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0",
+      backgroundSize: "8px 8px"
+    };
+  }
+
+  return canvasPreviewBackgroundStyle(mode, deviceColor);
+}
+
+function bridgeStatusView(health: BridgeHealth | undefined) {
+  if (!health) {
+    return { kind: "checking" as const, message: "Checking bridge" };
+  }
+  if (!health.ok) {
+    return { kind: "offline" as const, message: "Bridge offline" };
+  }
+  if (health.previewClients > 0) {
+    return { kind: "connected" as const, message: `Simulator connected (${health.previewClients})` };
+  }
+  return { kind: "no-client" as const, message: "Bridge running, no simulator" };
+}
+
+function formatJson(value: unknown) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function buildPreviewPlan(project: StudioProject) {
@@ -2220,7 +4309,7 @@ function buildPreviewPlan(project: StudioProject) {
 
     const start = cursor + phase.startDelay;
     const duration = previewPhaseDuration(phase);
-    const nextValues = applyPreviewTargets(project, values, phase.targets);
+    const nextValues = applyPreviewTargets(project, values, phase);
     segments.push({
       phase,
       start,
@@ -2318,24 +4407,36 @@ function initialPreviewTransforms(project: StudioProject): Record<string, Previe
 function applyPreviewTargets(
   project: StudioProject,
   current: Record<string, PreviewTransform>,
-  targets: MotionAssignment[]
+  phase: StudioPhase
 ): Record<string, PreviewTransform> {
   const next = clone(current);
-  for (const assignment of targets) {
+  for (const assignment of phase.targets) {
     if (typeof assignment.value !== "number") continue;
     for (const nodeId of resolveNodeSelector(project, assignment.select)) {
       const transform = next[nodeId];
       if (!transform) continue;
       for (const property of assignment.select.properties) {
-        if (property === "offset.x") transform.x = assignment.value;
-        if (property === "offset.y") transform.y = assignment.value;
-        if (property === "scale") transform.scale = assignment.value;
-        if (property === "rotation") transform.rotation = assignment.value;
-        if (property === "opacity") transform.opacity = assignment.value;
+        const value = phase.mode === "deltaFromPrevious"
+          ? previewPropertyValue(transform, property) + assignment.value
+          : assignment.value;
+        if (property === "offset.x") transform.x = value;
+        if (property === "offset.y") transform.y = value;
+        if (property === "scale") transform.scale = value;
+        if (property === "rotation") transform.rotation = value;
+        if (property === "opacity") transform.opacity = value;
       }
     }
   }
   return next;
+}
+
+function previewPropertyValue(transform: PreviewTransform, property: MotionPropertySelector["properties"][number]) {
+  if (property === "offset.x") return transform.x;
+  if (property === "offset.y") return transform.y;
+  if (property === "scale") return transform.scale;
+  if (property === "rotation") return transform.rotation;
+  if (property === "opacity") return transform.opacity;
+  return 0;
 }
 
 function collectPreviewActions(
@@ -2594,14 +4695,35 @@ function orderedNodes(project: StudioProject): StudioNode[] {
   return result;
 }
 
+function nodeDepth(project: StudioProject, node: StudioNode) {
+  let depth = 0;
+  let parentId = node.parentId;
+  const seen = new Set<string>();
+  while (parentId && parentId !== project.rootNodeId && !seen.has(parentId)) {
+    seen.add(parentId);
+    depth += 1;
+    parentId = project.nodes[parentId]?.parentId ?? null;
+  }
+  return depth;
+}
+
 function defaultStyle(kind: NodeKindChoice, name: string): StudioNode["style"] {
   if (kind === "text") return { text: name, foregroundColor: "#E0F2FE" };
+  if (kind === "image") return { imageUrl: "", contentMode: "100% 100%" };
+  if (kind === "path") {
+    return {
+      backgroundColor: "#38BDF8",
+      pathData: "M 100 0 C 100 55.23 55.23 100 0 100 C -55.23 100 -100 55.23 -100 0 C -100 -55.23 -55.23 -100 0 -100 C 55.23 -100 100 -55.23 100 0 Z",
+      viewBoxWidth: 200,
+      viewBoxHeight: 200
+    };
+  }
   if (kind === "circle") return { backgroundColor: "#38BDF8" };
   return { backgroundColor: "#0EA5E9", cornerRadius: 14 };
 }
 
 function defaultFills(kind: NodeKindChoice): MotionFill[] {
-  if (kind === "text") return [];
+  if (kind === "text" || kind === "image") return [];
   return [{
     type: "solid",
     color: kind === "circle" ? "#38BDF8" : "#0EA5E9",
@@ -2611,6 +4733,8 @@ function defaultFills(kind: NodeKindChoice): MotionFill[] {
 
 function defaultLayout(kind: NodeKindChoice): StudioNode["layout"] {
   if (kind === "text") return {};
+  if (kind === "image") return { width: 160, height: 110 };
+  if (kind === "path") return { width: 120, height: 120 };
   return { width: kind === "circle" ? 72 : 150, height: kind === "circle" ? 72 : 86 };
 }
 
@@ -2736,6 +4860,15 @@ function componentRoles(component: StudioComponent) {
   return uniqueStrings([...(component.roles?.length ? component.roles : ["actor"]), `component:${component.id}`]);
 }
 
+function retargetComponentTemplateRoles(component: StudioComponent, oldId: string, newId: string) {
+  const oldRole = `component:${oldId}`;
+  const newRole = `component:${newId}`;
+  component.roles = uniqueStrings([...(component.roles ?? []).filter((role) => role !== oldRole), newRole]);
+  for (const node of Object.values(component.nodes ?? {})) {
+    node.roles = uniqueStrings(node.roles.map((role) => role === oldRole ? newRole : role));
+  }
+}
+
 function nodeFromComponent(component: StudioComponent, records: Record<string, StudioNode>, rootNodeId: string): StudioNode {
   const kind = component.kind ?? "circle";
   const id = uniqueId(slug(component.name || kind), records);
@@ -2760,6 +4893,75 @@ function nodeFromComponent(component: StudioComponent, records: Record<string, S
     },
     componentId: component.id
   };
+}
+
+function nodeFromTemplateLayer(component: StudioComponent, template: StudioNode, records: Record<string, StudioNode>, rootNodeId: string): StudioNode {
+  const id = uniqueId(slug(`${component.name}-${template.name}`), records);
+  return {
+    ...clone(template),
+    id,
+    name: template.name,
+    parentId: rootNodeId,
+    childIds: [],
+    roles: uniqueStrings([
+      ...template.roles.filter((role) => role !== `component:${component.id}`),
+      "assetLayer",
+      "detachedAssetLayer",
+      `assetSource:${component.id}`
+    ]),
+    presentation: {
+      ...clone(template.presentation),
+      "offset.x": 0,
+      "offset.y": 0
+    }
+  };
+}
+
+function componentLayerAssets(component: StudioComponent) {
+  if (component.nodes === undefined) return [];
+  const ids = component.nodeIds?.length ? component.nodeIds : Object.keys(component.nodes);
+  return ids
+    .map((id) => component.nodes?.[id])
+    .filter((node): node is StudioNode => node !== undefined)
+    .filter((node) => node.kind !== "zstack" || node.id === component.rootNodeId);
+}
+
+function instantiateLayeredComponent(project: StudioProject, component: StudioComponent): StudioNode {
+  const templateNodes = component.nodes ?? {};
+  const orderedTemplateIds = component.nodeIds?.length ? component.nodeIds : Object.keys(templateNodes);
+  const idMap = new Map<string, string>();
+  for (const templateId of orderedTemplateIds) {
+    idMap.set(templateId, uniqueId(slug(`${component.name}-${templateId}`), project.nodes));
+  }
+
+  let firstNode: StudioNode | undefined;
+  for (const templateId of orderedTemplateIds) {
+    const template = templateNodes[templateId];
+    const id = idMap.get(templateId);
+    if (!template || !id) continue;
+    const mappedParentId = template.parentId !== null ? idMap.get(template.parentId) : undefined;
+
+    const node: StudioNode = {
+      ...clone(template),
+      id,
+      parentId: mappedParentId ?? project.rootNodeId,
+      childIds: template.childIds.map((childId) => idMap.get(childId)).filter((childId): childId is string => childId !== undefined),
+      roles: uniqueStrings([...template.roles, `component:${component.id}`]),
+      componentId: component.id
+    };
+    project.nodes[id] = node;
+    if (mappedParentId === undefined) {
+      project.nodes[project.rootNodeId]?.childIds.push(id);
+      firstNode ??= node;
+    }
+  }
+
+  for (const role of componentRoles(component)) {
+    project.roles[role] ??= { id: role, name: role };
+  }
+  project.roles.voiceGradient ??= { id: "voiceGradient", name: "voiceGradient", description: "Layered Figma voice gradient preset" };
+
+  return firstNode ?? nodeFromComponent(component, project.nodes, project.rootNodeId);
 }
 
 function ensureComponent(
@@ -2791,6 +4993,1068 @@ function ensureComponent(
   };
 
   return id;
+}
+
+const voiceDodgeExpandedPath = "M194.147 134.475C194.147 153.515 151.026 220.008 125.03 220.008C99.0331 220.008 100.005 153.515 100.005 134.475C100.005 115.435 121.079 100 147.076 100C173.072 100 194.147 115.435 194.147 134.475Z";
+
+type FigmaColor = { r: number; g: number; b: number; a?: number };
+type FigmaGradientStop = { color: FigmaColor; position: number; variable?: string };
+type FigmaRadialFill = {
+  type: "GRADIENT_RADIAL";
+  visible: boolean;
+  opacity: number;
+  blendMode: string;
+  gradientTransform: [[number, number, number], [number, number, number]];
+  gradientStops: FigmaGradientStop[];
+};
+type FigmaLayerBlurEffect = {
+  type: "LAYER_BLUR";
+  visible: boolean;
+  radius: number;
+  blurType: string;
+};
+type FigmaRect = { x: number; y: number; width: number; height: number };
+type FigmaEllipseLayerContract = {
+  id: string;
+  name: string;
+  type: "ELLIPSE";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  opacity: number;
+  blendMode: string;
+  absoluteBoundingBox: FigmaRect;
+  absoluteRenderBounds: FigmaRect;
+  fills: FigmaRadialFill[];
+  effects: FigmaLayerBlurEffect[];
+  vectorExport: {
+    filterBox: FigmaRect;
+    renderBoundsRadialGradientTransform: [number, number, number, number, number, number];
+  };
+};
+
+const figmaPlanetOneLayer: FigmaEllipseLayerContract = {
+  id: "250:475",
+  name: "Planet 1",
+  type: "ELLIPSE",
+  x: -70,
+  y: 141.0000762939453,
+  width: 516,
+  height: 269,
+  opacity: 1,
+  blendMode: "PASS_THROUGH",
+  absoluteBoundingBox: { x: 292, y: 465.00006103515625, width: 516, height: 269 },
+  absoluteRenderBounds: { x: 362, y: 365.00006103515625, width: 375, height: 206.99993896484375 },
+  fills: [{
+    type: "GRADIENT_RADIAL",
+    visible: true,
+    opacity: 1,
+    blendMode: "NORMAL",
+    gradientTransform: [
+      [-0.003717739600688219, 0.43574050068855286, 0.524412989616394],
+      [-0.436233788728714, 1.0644263248593688e-14, 0.70759117603302]
+    ],
+    gradientStops: [
+      { color: { r: 0.9411764740943909, g: 0.5882353186607361, b: 0.054901961237192154, a: 1 }, position: 0.13211318850517273, variable: "yellow-500" },
+      { color: { r: 0.9882352948188782, g: 0.4745098054409027, b: 0.05098039284348488, a: 1 }, position: 0.16975507140159607, variable: "orange-500" },
+      { color: { r: 0.5137255191802979, g: 0.125490203499794, b: 0.8549019694328308, a: 1 }, position: 0.2731081545352936, variable: "purple-600" },
+      { color: { r: 0.8196078538894653, g: 0.5843137502670288, b: 0.9764705896377563, a: 1 }, position: 0.3799999952316284, variable: "purple-300" },
+      { color: { r: 1, g: 1, b: 1, a: 1 }, position: 0.44999998807907104, variable: "neutral-100" }
+    ]
+  }],
+  effects: [{ type: "LAYER_BLUR", visible: true, radius: 100, blurType: "NORMAL" }],
+  vectorExport: {
+    filterBox: { x: -170, y: 0, width: 716, height: 469 },
+    renderBoundsRadialGradientTransform: [0, 308.67, -591.426, -2.6306, 175.55, 86.0211]
+  }
+};
+
+const figmaHotelPlanetOneLayer: FigmaEllipseLayerContract = {
+  id: "5014:46007",
+  name: "Planet 1",
+  type: "ELLIPSE",
+  x: 1301.0007934570312,
+  y: 2672.99995803833,
+  width: 332,
+  height: 317,
+  opacity: 1,
+  blendMode: "PASS_THROUGH",
+  absoluteBoundingBox: { x: 21848, y: 14727, width: 332, height: 317 },
+  absoluteRenderBounds: { x: 21748, y: 14627, width: 532, height: 517 },
+  fills: [{
+    type: "GRADIENT_RADIAL",
+    visible: true,
+    opacity: 1,
+    blendMode: "NORMAL",
+    gradientTransform: [
+      [0.06025275960564613, 0.4398942291736603, 0.49992650747299194],
+      [-0.4398942291736603, 0.05836670473217964, 0.6909582614898682]
+    ],
+    gradientStops: [
+      { color: { r: 1, g: 0.6599999666213989, b: 0, a: 1 }, position: 0 },
+      { color: { r: 0.9882352948188782, g: 0.4745098054409027, b: 0.05098039284348488, a: 1 }, position: 0.3400000035762787 },
+      { color: { r: 1, g: 0.2766667604446411, b: 0.8408665060997009, a: 1 }, position: 0.6399999856948853 }
+    ]
+  }],
+  effects: [{ type: "LAYER_BLUR", visible: true, radius: 100, blurType: "NORMAL" }],
+  vectorExport: {
+    filterBox: { x: 0, y: 0, width: 532, height: 517 },
+    renderBoundsRadialGradientTransform: [49.1762, 353.883, -370.628, 48.4716, 241.556, 81.5399]
+  }
+};
+
+function figmaEllipseLayerToFrameZeroNode(
+  layer: FigmaEllipseLayerContract,
+  options: {
+    id: string;
+    roles: string[];
+    parentId: string | null;
+    offsetX: number;
+    offsetY: number;
+  }
+): StudioNode {
+  const fill = layer.fills.find((candidate) => candidate.visible && candidate.type === "GRADIENT_RADIAL");
+  if (!fill) throw new Error(`Figma layer ${layer.id} does not have a visible radial fill`);
+
+  const blur = layer.effects.find((effect) => effect.visible && effect.type === "LAYER_BLUR")?.radius ?? 0;
+  const renderBounds = layer.absoluteRenderBounds;
+  const filterBox = layer.vectorExport.filterBox;
+  const filterAbsoluteX = renderBounds.x + filterBox.x;
+  const filterAbsoluteY = renderBounds.y + filterBox.y;
+  const shapeLeft = layer.absoluteBoundingBox.x - filterAbsoluteX;
+  const shapeTop = layer.absoluteBoundingBox.y - filterAbsoluteY;
+  const shapeRight = filterBox.width - shapeLeft - layer.absoluteBoundingBox.width;
+  const shapeBottom = filterBox.height - shapeTop - layer.absoluteBoundingBox.height;
+  const cropX = -filterBox.x;
+  const cropY = -filterBox.y;
+  const filterBoxGradientTransform = figmaRenderBoundsTransformToFilterBoxTransform(
+    layer.vectorExport.renderBoundsRadialGradientTransform,
+    cropX,
+    cropY
+  );
+
+  return voiceEllipseNode(
+    options.id,
+    layer.name,
+    options.roles,
+    round(renderBounds.width),
+    round(renderBounds.height),
+    options.offsetX,
+    options.offsetY,
+    layer.opacity,
+    [{
+      type: "radialGradient",
+      colors: fill.gradientStops.map((stop) => ({
+        color: figmaColorToHex(stop.color),
+        position: stop.position,
+        opacity: stop.color.a ?? fill.opacity
+      })),
+      gradientTransform: filterBoxGradientTransform,
+      opacity: fill.opacity
+    }],
+    {
+      figmaBlur: blur,
+      "shapeBounds.top": shapeTop,
+      "shapeBounds.right": shapeRight,
+      "shapeBounds.bottom": shapeBottom,
+      "shapeBounds.left": shapeLeft,
+      "figmaFilterBox.x": filterBox.x,
+      "figmaFilterBox.y": filterBox.y,
+      "figmaFilterBox.width": filterBox.width,
+      "figmaFilterBox.height": filterBox.height,
+      "figmaFilterBox.cropX": cropX,
+      "figmaFilterBox.cropY": cropY,
+      "figma.source.id": layer.id,
+      "figma.source.type": layer.type,
+      "figma.source.x": layer.x,
+      "figma.source.y": layer.y,
+      "figma.source.width": layer.width,
+      "figma.source.height": layer.height,
+      "figma.source.absoluteBoundingBox.x": layer.absoluteBoundingBox.x,
+      "figma.source.absoluteBoundingBox.y": layer.absoluteBoundingBox.y,
+      "figma.source.absoluteBoundingBox.width": layer.absoluteBoundingBox.width,
+      "figma.source.absoluteBoundingBox.height": layer.absoluteBoundingBox.height,
+      "figma.source.absoluteRenderBounds.x": renderBounds.x,
+      "figma.source.absoluteRenderBounds.y": renderBounds.y,
+      "figma.source.absoluteRenderBounds.width": renderBounds.width,
+      "figma.source.absoluteRenderBounds.height": renderBounds.height,
+      "figma.source.blurRadius": blur,
+      "figma.source.gradientTransform.0.0": fill.gradientTransform[0][0],
+      "figma.source.gradientTransform.0.1": fill.gradientTransform[0][1],
+      "figma.source.gradientTransform.0.2": fill.gradientTransform[0][2],
+      "figma.source.gradientTransform.1.0": fill.gradientTransform[1][0],
+      "figma.source.gradientTransform.1.1": fill.gradientTransform[1][1],
+      "figma.source.gradientTransform.1.2": fill.gradientTransform[1][2],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.0": layer.vectorExport.renderBoundsRadialGradientTransform[0],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.1": layer.vectorExport.renderBoundsRadialGradientTransform[1],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.2": layer.vectorExport.renderBoundsRadialGradientTransform[2],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.3": layer.vectorExport.renderBoundsRadialGradientTransform[3],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.4": layer.vectorExport.renderBoundsRadialGradientTransform[4],
+      "figma.vectorExport.renderBoundsRadialGradientTransform.5": layer.vectorExport.renderBoundsRadialGradientTransform[5],
+      "figma.frameZero.filterBoxRadialGradientTransform.0": filterBoxGradientTransform[0],
+      "figma.frameZero.filterBoxRadialGradientTransform.1": filterBoxGradientTransform[1],
+      "figma.frameZero.filterBoxRadialGradientTransform.2": filterBoxGradientTransform[2],
+      "figma.frameZero.filterBoxRadialGradientTransform.3": filterBoxGradientTransform[3],
+      "figma.frameZero.filterBoxRadialGradientTransform.4": filterBoxGradientTransform[4],
+      "figma.frameZero.filterBoxRadialGradientTransform.5": filterBoxGradientTransform[5]
+    },
+    0,
+    1,
+    options.parentId
+  );
+}
+
+function figmaRenderBoundsTransformToFilterBoxTransform(
+  transform: [number, number, number, number, number, number],
+  cropX: number,
+  cropY: number
+): [number, number, number, number, number, number] {
+  return [
+    transform[0],
+    transform[1],
+    transform[2],
+    transform[3],
+    transform[4] + cropX,
+    transform[5] + cropY
+  ];
+}
+
+function figmaColorToHex(color: FigmaColor) {
+  const channel = (value: number) => Math.round(clamp(value, 0, 1) * 255).toString(16).padStart(2, "0").toUpperCase();
+  return `#${channel(color.r)}${channel(color.g)}${channel(color.b)}`;
+}
+
+function voiceGradientComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const roles = ["actor", "voiceGradient", componentRole];
+  const nodes: Record<string, StudioNode> = {
+    voiceFrame: voiceGradientNode("voiceFrame", "Voice Gradient Frame", "zstack", roles, 375, 248, 0, 0, {
+      clip: true,
+      cornerRadius: 0
+    }, [{
+      type: "linearGradient",
+      angle: 180,
+      colors: [
+        { color: "#FFFFFF", position: 0, opacity: 0 },
+        { color: "#FFFFFF", position: 0.15, opacity: 0.3 },
+        { color: "#FFFFFF", position: 0.35, opacity: 0.7 },
+        { color: "#FFFFFF", position: 0.5, opacity: 1 },
+        { color: "#FFFFFF", position: 1, opacity: 1 }
+      ],
+      opacity: 1
+    }], 0, null, ["planetWide", "planetOne", "planetFour", "planetThree", "leftDodge", "rightDodge"]),
+    planetWide: voiceImageNode("planetWide", "Planet 2", ["voiceGradient", "fidelity:asset-required", "figma:295-45", componentRole], 1060, 440, 0.5, 88, 0.8, "/figma/voice/planet-2.svg", {
+      "effectBounds.top": 70,
+      "effectBounds.right": 70,
+      "effectBounds.bottom": 70,
+      "effectBounds.left": 70
+    }, 180, 1, "voiceFrame"),
+    planetOne: figmaEllipseLayerToFrameZeroNode(figmaPlanetOneLayer, {
+      id: "planetOne",
+      roles: ["voiceGradient", "figma:250-475", "native-layer:planet-1", componentRole],
+      parentId: "voiceFrame",
+      offsetX: 0,
+      offsetY: 20.5
+    }),
+    planetFour: voiceImageNode("planetFour", "Planet 4", ["voiceGradient", "fidelity:asset-required", "figma:250-476", componentRole], 303, 276, 0, 10, 0.8, "/figma/voice/planet-4.svg", {
+      "effectBounds.top": 80,
+      "effectBounds.right": 80,
+      "effectBounds.bottom": 80,
+      "effectBounds.left": 80
+    }, 0, 1, "voiceFrame"),
+    planetThree: voiceImageNode("planetThree", "Planet 3", ["voiceGradient", "fidelity:asset-required", "figma:250-477", componentRole], 250, 240, -0.5, 28, 0.8, "/figma/voice/planet-3.svg", {
+      blendMode: "screen",
+      "effectBounds.top": 80,
+      "effectBounds.right": 80,
+      "effectBounds.bottom": 80,
+      "effectBounds.left": 80
+    }, 0, 1, "voiceFrame"),
+    leftDodge: voiceImageNode("leftDodge", "Colour Dodge", ["voiceGradient", "fidelity:asset-required", "figma:250-478", componentRole], 294.147, 320.008, -150.36, 7.06, 1, "/figma/voice/colour-dodge-1.svg", {
+      blendMode: "plusLighter",
+      "effectBounds.top": 100,
+      "effectBounds.right": 100,
+      "effectBounds.bottom": 100,
+      "effectBounds.left": 100
+    }, -75),
+    rightDodge: voiceImageNode("rightDodge", "Colour Dodge 2", ["voiceGradient", "fidelity:asset-required", "figma:250-479", componentRole], 294.147, 320.008, 151.64, 7.06, 1, "/figma/voice/colour-dodge-2.svg", {
+      blendMode: "plusLighter",
+      "effectBounds.top": 100,
+      "effectBounds.right": 100,
+      "effectBounds.bottom": 100,
+      "effectBounds.left": 100
+    }, -105, -1)
+  };
+
+  return {
+    id,
+    name: "Voice Gradient",
+    rootNodeId: "voiceFrame",
+    nodeIds: ["voiceFrame", "planetWide", "planetOne", "planetFour", "planetThree", "leftDodge", "rightDodge"],
+    nodes,
+    roles: ["voiceGradient", componentRole]
+  };
+}
+
+function hotelPlanetOneComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const nodes: Record<string, StudioNode> = {
+    hotelPlanetOne: figmaEllipseLayerToFrameZeroNode(figmaHotelPlanetOneLayer, {
+      id: "hotelPlanetOne",
+      roles: ["actor", "hotelPlanetOne", "figma:5014-46007", "native-layer:hotel-planet-1", componentRole],
+      parentId: null,
+      offsetX: 0,
+      offsetY: 0
+    })
+  };
+  const frameNode = nodes.hotelGradientFrame;
+  if (frameNode) frameNode.presentation.opacity = 0.6000000238418579;
+
+  return {
+    id,
+    name: "Hotel Planet 1",
+    rootNodeId: "hotelPlanetOne",
+    nodeIds: ["hotelPlanetOne"],
+    nodes,
+    roles: ["hotelPlanetOne", componentRole]
+  };
+}
+
+function hotelPlanetTwoComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const nodes: Record<string, StudioNode> = {
+    hotelPlanetTwo: voiceEllipseNode(
+      "hotelPlanetTwo",
+      "Planet 2",
+      ["actor", "hotelPlanetTwo", "figma:5014-46006", "native-layer:hotel-planet-2", componentRole],
+      686,
+      435,
+      447,
+      181.5,
+      1,
+      [{
+        type: "linearGradient",
+        angle: 0,
+        colors: [
+          { color: "#7FDEFF", position: 0, opacity: 0.800000011920929 },
+          { color: "#7FDEFF", position: 1, opacity: 1 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 100,
+        "shapeBounds.top": 100,
+        "shapeBounds.right": 100,
+        "shapeBounds.bottom": 100,
+        "shapeBounds.left": 100,
+        "figmaFilterBox.x": 0,
+        "figmaFilterBox.y": 0,
+        "figmaFilterBox.width": 686,
+        "figmaFilterBox.height": 435,
+        "figmaFilterBox.cropX": 0,
+        "figmaFilterBox.cropY": 0,
+        "figma.source.id": "5014:46006",
+        "figma.source.type": "ELLIPSE",
+        "figma.source.x": 1555.0001831054688,
+        "figma.source.y": 2883,
+        "figma.source.width": 486.0000305175781,
+        "figma.source.height": 234.9999542236328,
+        "figma.source.absoluteBoundingBox.x": 21615.999969482422,
+        "figma.source.absoluteBoundingBox.y": 14702.000003288895,
+        "figma.source.absoluteBoundingBox.width": 486.0000510619284,
+        "figma.source.absoluteBoundingBox.height": 234.99999671110527,
+        "figma.source.absoluteRenderBounds.x": 21516,
+        "figma.source.absoluteRenderBounds.y": 14602,
+        "figma.source.absoluteRenderBounds.width": 686,
+        "figma.source.absoluteRenderBounds.height": 435,
+        "figma.source.blurRadius": 100,
+        "figma.source.gradientTransform.0.0": 6.123234262925839e-17,
+        "figma.source.gradientTransform.0.1": -1,
+        "figma.source.gradientTransform.0.2": 1,
+        "figma.source.gradientTransform.1.0": 1,
+        "figma.source.gradientTransform.1.1": 6.123234262925839e-17,
+        "figma.source.gradientTransform.1.2": 0,
+        "figma.vectorExport.linearGradient.x1": 343,
+        "figma.vectorExport.linearGradient.y1": 335,
+        "figma.vectorExport.linearGradient.x2": 343,
+        "figma.vectorExport.linearGradient.y2": 100
+      },
+      0,
+      1,
+      null
+    )
+  };
+
+  return {
+    id,
+    name: "Blue Planet",
+    rootNodeId: "hotelPlanetTwo",
+    nodeIds: ["hotelPlanetTwo"],
+    nodes,
+    roles: ["hotelPlanetTwo", componentRole]
+  };
+}
+
+function hotelGradientComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const roles = ["actor", "hotelGradient", "figma:5014-46005", componentRole];
+  const nodes: Record<string, StudioNode> = {
+    hotelGradientFrame: voiceGradientNode(
+      "hotelGradientFrame",
+      "Gradient",
+      "zstack",
+      roles,
+      764,
+      542,
+      0,
+      0,
+      {
+        cornerRadius: 0,
+        "figma.source.id": "5014:46005",
+        "figma.source.type": "GROUP",
+        "figma.source.x": 1069,
+        "figma.source.y": 2648,
+        "figma.source.width": 564,
+        "figma.source.height": 342,
+        "figma.source.opacity": 0.6000000238418579,
+        "figma.source.absoluteBoundingBox.x": 21616,
+        "figma.source.absoluteBoundingBox.y": 14702,
+        "figma.source.absoluteBoundingBox.width": 564,
+        "figma.source.absoluteBoundingBox.height": 342,
+        "figma.source.absoluteRenderBounds.x": 21516,
+        "figma.source.absoluteRenderBounds.y": 14602,
+        "figma.source.absoluteRenderBounds.width": 764,
+        "figma.source.absoluteRenderBounds.height": 542
+      },
+      [],
+      0,
+      null,
+      ["hotelGradientPlanetTwo", "hotelGradientPlanetOne"]
+    ),
+    hotelGradientPlanetTwo: voiceEllipseNode(
+      "hotelGradientPlanetTwo",
+      "Planet 2",
+      ["hotelGradient", "figma:5014-46006", "native-layer:hotel-planet-2", componentRole],
+      686,
+      435,
+      -39,
+      -53.5,
+      1,
+      [{
+        type: "linearGradient",
+        angle: 0,
+        colors: [
+          { color: "#7FDEFF", position: 0, opacity: 0.800000011920929 },
+          { color: "#7FDEFF", position: 1, opacity: 1 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 100,
+        "shapeBounds.top": 100,
+        "shapeBounds.right": 100,
+        "shapeBounds.bottom": 100,
+        "shapeBounds.left": 100,
+        "figmaFilterBox.x": 0,
+        "figmaFilterBox.y": 0,
+        "figmaFilterBox.width": 686,
+        "figmaFilterBox.height": 435,
+        "figmaFilterBox.cropX": 0,
+        "figmaFilterBox.cropY": 0,
+        "figma.source.id": "5014:46006",
+        "figma.source.absoluteRenderBounds.x": 21516,
+        "figma.source.absoluteRenderBounds.y": 14602,
+        "figma.vectorExport.linearGradient.x1": 343,
+        "figma.vectorExport.linearGradient.y1": 335,
+        "figma.vectorExport.linearGradient.x2": 343,
+        "figma.vectorExport.linearGradient.y2": 100
+      },
+      0,
+      1,
+      "hotelGradientFrame"
+    ),
+    hotelGradientPlanetOne: figmaEllipseLayerToFrameZeroNode(figmaHotelPlanetOneLayer, {
+      id: "hotelGradientPlanetOne",
+      roles: ["hotelGradient", "figma:5014-46007", "native-layer:hotel-planet-1", componentRole],
+      parentId: "hotelGradientFrame",
+      offsetX: 116,
+      offsetY: 12.5
+    })
+  };
+  const frameNode = nodes.hotelGradientFrame;
+  if (frameNode) frameNode.presentation.opacity = 0.6000000238418579;
+
+  return {
+    id,
+    name: "Hotel Full Gradient",
+    rootNodeId: "hotelGradientFrame",
+    nodeIds: ["hotelGradientFrame", "hotelGradientPlanetTwo", "hotelGradientPlanetOne"],
+    nodes,
+    roles: ["hotelGradient", componentRole]
+  };
+}
+
+function hotelActiveGradientComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const frameRoles = ["actor", "hotelActiveGradient", "figma:5013-45996", "figma:4429-181334", componentRole];
+  const hotelRoles = ["hotelActiveGradient", "hotelGradient", "figma:4312-238210", "figma:5014-46005", componentRole];
+  const nodes: Record<string, StudioNode> = {
+    hotelActiveGradientFrame: voiceGradientNode(
+      "hotelActiveGradientFrame",
+      "Hotel Active Gradient",
+      "zstack",
+      frameRoles,
+      375,
+      250,
+      0,
+      0,
+      {
+        clip: true,
+        cornerRadius: 0,
+        "figma.source.id": "5013:45996",
+        "figma.variant.id": "4429:181334",
+        "figma.variant.type": "xSmall"
+      },
+      [{
+        type: "linearGradient",
+        angle: 180,
+        colors: [
+          { color: "#FFFFFF", position: 0, opacity: 0 },
+          { color: "#FFFFFF", position: 0.2, opacity: 0.3 },
+          { color: "#FFFFFF", position: 0.35, opacity: 0.7 },
+          { color: "#FFFFFF", position: 0.5, opacity: 1 },
+          { color: "#FFFFFF", position: 1, opacity: 1 }
+        ],
+        opacity: 1
+      }],
+      0,
+      null,
+      ["hotelActiveGradientSource"]
+    ),
+    hotelActiveGradientSource: voiceGradientNode(
+      "hotelActiveGradientSource",
+      "Gradient",
+      "zstack",
+      hotelRoles,
+      764,
+      542,
+      -38.5,
+      121,
+      {
+        cornerRadius: 0,
+        "figma.source.id": "5014:46005",
+        "figma.source.wrapper.id": "4312:238210",
+        "figma.source.type": "GROUP",
+        "figma.source.x": 1069,
+        "figma.source.y": 2648,
+        "figma.source.width": 564,
+        "figma.source.height": 342,
+        "figma.source.opacity": 0.6000000238418579,
+        "figma.source.absoluteBoundingBox.x": 21616,
+        "figma.source.absoluteBoundingBox.y": 14702,
+        "figma.source.absoluteBoundingBox.width": 564,
+        "figma.source.absoluteBoundingBox.height": 342,
+        "figma.source.absoluteRenderBounds.x": 21516,
+        "figma.source.absoluteRenderBounds.y": 14602,
+        "figma.source.absoluteRenderBounds.width": 764,
+        "figma.source.absoluteRenderBounds.height": 542
+      },
+      [],
+      0,
+      "hotelActiveGradientFrame",
+      ["hotelActivePlanetTwo", "hotelActivePlanetOne"]
+    ),
+    hotelActivePlanetTwo: voiceEllipseNode(
+      "hotelActivePlanetTwo",
+      "Planet 2",
+      ["hotelActiveGradient", "hotelGradient", "figma:5014-46006", "native-layer:hotel-planet-2", componentRole],
+      686,
+      435,
+      -39,
+      -53.5,
+      1,
+      [{
+        type: "linearGradient",
+        angle: 0,
+        colors: [
+          { color: "#7FDEFF", position: 0, opacity: 0.800000011920929 },
+          { color: "#7FDEFF", position: 1, opacity: 1 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 100,
+        "shapeBounds.top": 100,
+        "shapeBounds.right": 100,
+        "shapeBounds.bottom": 100,
+        "shapeBounds.left": 100,
+        "figmaFilterBox.x": 0,
+        "figmaFilterBox.y": 0,
+        "figmaFilterBox.width": 686,
+        "figmaFilterBox.height": 435,
+        "figmaFilterBox.cropX": 0,
+        "figmaFilterBox.cropY": 0,
+        "figma.source.id": "5014:46006",
+        "figma.source.absoluteRenderBounds.x": 21516,
+        "figma.source.absoluteRenderBounds.y": 14602,
+        "figma.vectorExport.linearGradient.x1": 343,
+        "figma.vectorExport.linearGradient.y1": 335,
+        "figma.vectorExport.linearGradient.x2": 343,
+        "figma.vectorExport.linearGradient.y2": 100
+      },
+      0,
+      1,
+      "hotelActiveGradientSource"
+    ),
+    hotelActivePlanetOne: figmaEllipseLayerToFrameZeroNode(figmaHotelPlanetOneLayer, {
+      id: "hotelActivePlanetOne",
+      roles: ["hotelActiveGradient", "hotelGradient", "figma:5014-46007", "native-layer:hotel-planet-1", componentRole],
+      parentId: "hotelActiveGradientSource",
+      offsetX: 116,
+      offsetY: 12.5
+    })
+  };
+  const sourceNode = nodes.hotelActiveGradientSource;
+  if (sourceNode) sourceNode.presentation.opacity = 0.6000000238418579;
+
+  return {
+    id,
+    name: "Hotel Active Gradient",
+    rootNodeId: "hotelActiveGradientFrame",
+    nodeIds: ["hotelActiveGradientFrame", "hotelActiveGradientSource", "hotelActivePlanetTwo", "hotelActivePlanetOne"],
+    nodes,
+    roles: ["hotelActiveGradient", componentRole]
+  };
+}
+
+function hotelActiveGradientTallComponent(id: string): StudioComponent {
+  const componentRole = `component:${id}`;
+  const frameRoles = ["actor", "hotelActiveGradientTall", "hotelActiveGradient", "figma:5013-45996", "figma:4429-181334", componentRole];
+  const fieldRoles = ["hotelActiveGradientTall", "hotelGradient", "native-layer:hotel-active-500-continuous-field", componentRole];
+  const nodes: Record<string, StudioNode> = {
+    hotelActiveGradientTallFrame: voiceGradientNode(
+      "hotelActiveGradientTallFrame",
+      "Hotel Active Gradient 500",
+      "zstack",
+      frameRoles,
+      375,
+      500,
+      0,
+      0,
+      {
+        clip: true,
+        cornerRadius: 0,
+        resizePolicy: "locked-375x500",
+        compositionPolicy: "continuous-375x500-native-field",
+        "figma.source.id": "5013:45996",
+        "figma.variant.id": "4429:181334",
+        "figma.variant.type": "xSmall"
+      },
+      [{
+        type: "linearGradient",
+        angle: 180,
+        colors: [
+          { color: "#FFFFFF", position: 0, opacity: 0 },
+          { color: "#FFFFFF", position: 0.42, opacity: 0.14 },
+          { color: "#FFFFFF", position: 0.62, opacity: 0.42 },
+          { color: "#FFFFFF", position: 0.75, opacity: 0.78 },
+          { color: "#FFFFFF", position: 1, opacity: 1 }
+        ],
+        opacity: 1
+      }],
+      0,
+      null,
+      [
+        "hotelActiveTallPlanetTwoField",
+        "hotelActiveTallPlanetOneField",
+        "hotelActiveTallCyanLowerField",
+        "hotelActiveTallPinkLowerField",
+        "hotelActiveTallWarmLowerField"
+      ]
+    ),
+    hotelActiveTallPlanetTwoField: voiceEllipseNode(
+      "hotelActiveTallPlanetTwoField",
+      "Planet 2 Continuous Field",
+      [...fieldRoles, "figma:5014-46006", "native-layer:hotel-active-500-planet-2-field"],
+      820,
+      760,
+      -112,
+      94,
+      0.56,
+      [{
+        type: "linearGradient",
+        angle: 0,
+        colors: [
+          { color: "#7FDEFF", position: 0, opacity: 0.42 },
+          { color: "#7FDEFF", position: 0.58, opacity: 0.26 },
+          { color: "#7FDEFF", position: 0.84, opacity: 0.1 },
+          { color: "#7FDEFF", position: 1, opacity: 0 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 210,
+        "effectBounds.top": 240,
+        "effectBounds.right": 240,
+        "effectBounds.bottom": 240,
+        "effectBounds.left": 240,
+        blendMode: "normal",
+        resizePolicy: "locked-continuous-field-layer",
+        derivationPolicy: "scaled-from-planet-2"
+      },
+      0,
+      1,
+      "hotelActiveGradientTallFrame"
+    ),
+    hotelActiveTallPlanetOneField: voiceEllipseNode(
+      "hotelActiveTallPlanetOneField",
+      "Planet 1 Continuous Field",
+      [...fieldRoles, "figma:5014-46007", "native-layer:hotel-active-500-planet-1-field"],
+      650,
+      720,
+      86,
+      150,
+      0.46,
+      [{
+        type: "radialGradient",
+        centerX: 0.52,
+        centerY: 0.64,
+        radius: 420,
+        colors: [
+          { color: "#FFAA00", position: 0, opacity: 0.24 },
+          { color: "#FC790D", position: 0.3, opacity: 0.2 },
+          { color: "#FF46D6", position: 0.6, opacity: 0.28 },
+          { color: "#B95CFF", position: 0.84, opacity: 0.12 },
+          { color: "#B95CFF", position: 1, opacity: 0 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 220,
+        "effectBounds.top": 252,
+        "effectBounds.right": 252,
+        "effectBounds.bottom": 252,
+        "effectBounds.left": 252,
+        blendMode: "normal",
+        resizePolicy: "locked-continuous-field-layer",
+        derivationPolicy: "scaled-from-planet-1"
+      },
+      0,
+      1,
+      "hotelActiveGradientTallFrame"
+    ),
+    hotelActiveTallCyanLowerField: voiceEllipseNode(
+      "hotelActiveTallCyanLowerField",
+      "Cyan Lower Field",
+      [...fieldRoles, "figma:5014-46006", "native-layer:hotel-active-500-cyan-lower-field"],
+      680,
+      420,
+      -146,
+      174,
+      0.32,
+      [{
+        type: "radialGradient",
+        centerX: 0.36,
+        centerY: 0.58,
+        radius: 350,
+        colors: [
+          { color: "#7FDEFF", position: 0, opacity: 0.34 },
+          { color: "#7FDEFF", position: 0.62, opacity: 0.14 },
+          { color: "#7FDEFF", position: 1, opacity: 0 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 170,
+        "effectBounds.top": 196,
+        "effectBounds.right": 196,
+        "effectBounds.bottom": 196,
+        "effectBounds.left": 196,
+        blendMode: "normal",
+        resizePolicy: "locked-continuous-field-layer",
+        derivationPolicy: "scaled-from-planet-2"
+      },
+      0,
+      1,
+      "hotelActiveGradientTallFrame"
+    ),
+    hotelActiveTallPinkLowerField: voiceEllipseNode(
+      "hotelActiveTallPinkLowerField",
+      "Pink Lower Field",
+      [...fieldRoles, "figma:5014-46007", "native-layer:hotel-active-500-pink-lower-field"],
+      560,
+      460,
+      90,
+      198,
+      0.32,
+      [{
+        type: "radialGradient",
+        centerX: 0.48,
+        centerY: 0.58,
+        radius: 330,
+        colors: [
+          { color: "#FF46D6", position: 0, opacity: 0.26 },
+          { color: "#B95CFF", position: 0.58, opacity: 0.12 },
+          { color: "#B95CFF", position: 1, opacity: 0 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 180,
+        "effectBounds.top": 204,
+        "effectBounds.right": 204,
+        "effectBounds.bottom": 204,
+        "effectBounds.left": 204,
+        blendMode: "normal",
+        resizePolicy: "locked-continuous-field-layer",
+        derivationPolicy: "scaled-from-planet-1"
+      },
+      0,
+      1,
+      "hotelActiveGradientTallFrame"
+    ),
+    hotelActiveTallWarmLowerField: voiceEllipseNode(
+      "hotelActiveTallWarmLowerField",
+      "Warm Lower Field",
+      [...fieldRoles, "figma:5014-46007", "native-layer:hotel-active-500-warm-lower-field"],
+      390,
+      310,
+      112,
+      224,
+      0.3,
+      [{
+        type: "radialGradient",
+        centerX: 0.52,
+        centerY: 0.62,
+        radius: 210,
+        colors: [
+          { color: "#FFAA00", position: 0, opacity: 0.34 },
+          { color: "#FC790D", position: 0.48, opacity: 0.18 },
+          { color: "#FC790D", position: 1, opacity: 0 }
+        ],
+        opacity: 1
+      }],
+      {
+        figmaBlur: 128,
+        "effectBounds.top": 152,
+        "effectBounds.right": 152,
+        "effectBounds.bottom": 152,
+        "effectBounds.left": 152,
+        blendMode: "normal",
+        resizePolicy: "locked-continuous-field-layer",
+        colorPolicy: "lower-right-contained",
+        derivationPolicy: "scaled-from-planet-1"
+      },
+      0,
+      1,
+      "hotelActiveGradientTallFrame"
+    )
+  };
+
+  return {
+    id,
+    name: "Hotel Active Gradient 500",
+    rootNodeId: "hotelActiveGradientTallFrame",
+    nodeIds: [
+      "hotelActiveGradientTallFrame",
+      "hotelActiveTallPlanetTwoField",
+      "hotelActiveTallPlanetOneField",
+      "hotelActiveTallCyanLowerField",
+      "hotelActiveTallPinkLowerField",
+      "hotelActiveTallWarmLowerField"
+    ],
+    nodes,
+    roles: ["hotelActiveGradientTall", componentRole]
+  };
+}
+
+function voiceGradientNode(
+  id: string,
+  name: string,
+  kind: NodeKindChoice,
+  roles: string[],
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  style: StudioNode["style"],
+  fills: MotionFill[],
+  rotation = 0,
+  parentId: string | null = null,
+  childIds: string[] = []
+): StudioNode {
+  return {
+    id,
+    name,
+    kind,
+    parentId,
+    childIds,
+    roles,
+    layout: { width, height },
+    style,
+    fills,
+    presentation: { "offset.x": x, "offset.y": y, rotation, scale: 1, opacity: 1 }
+  };
+}
+
+function voiceEllipseNode(
+  id: string,
+  name: string,
+  roles: string[],
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  opacity: number,
+  fills: MotionFill[],
+  styleOverrides: StudioNode["style"] = {},
+  rotation = 0,
+  scaleY = 1,
+  parentId: string | null = "voiceFrame"
+): StudioNode {
+  const firstSolid = fills.find((fill) => fill.type === "solid");
+  const node = voiceGradientNode(
+    id,
+    name,
+    "circle",
+    roles,
+    width,
+    height,
+    x,
+    y,
+    {
+      ...(firstSolid?.color !== undefined ? { backgroundColor: firstSolid.color } : {}),
+      ...styleOverrides
+    },
+    fills,
+    rotation,
+    parentId
+  );
+  node.presentation.opacity = opacity;
+  node.presentation["scale.y"] = scaleY;
+  return node;
+}
+
+function voiceImageNode(
+  id: string,
+  name: string,
+  roles: string[],
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  opacity: number,
+  imageUrl: string,
+  styleOverrides: StudioNode["style"] = {},
+  rotation = 0,
+  scaleY = 1,
+  parentId = "voiceFrame"
+): StudioNode {
+  const node = voiceGradientNode(
+    id,
+    name,
+    "image",
+    roles,
+    width,
+    height,
+    x,
+    y,
+    {
+      assetPolicy: "locked",
+      imageUrl,
+      contentMode: "100% 100%",
+      ...styleOverrides
+    },
+    [],
+    rotation,
+    parentId
+  );
+  node.presentation.opacity = opacity;
+  node.presentation["scale.y"] = scaleY;
+  return node;
+}
+
+function voicePathNode(
+  id: string,
+  name: string,
+  roles: string[],
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  opacity: number,
+  fills: MotionFill[],
+  styleOverrides: StudioNode["style"] = {},
+  rotation = 0,
+  scaleY = 1
+): StudioNode {
+  const firstSolid = fills.find((fill) => fill.type === "solid");
+  const node = voiceGradientNode(
+    id,
+    name,
+    "path",
+    roles,
+    width,
+    height,
+    x,
+    y,
+    {
+      ...(firstSolid?.color !== undefined ? { backgroundColor: firstSolid.color } : {}),
+      pathData: "M 94.1469 34.4752 C 94.1469 53.5153 51.0265 120.0085 25.0298 120.0085 C -0.9669 120.0085 0.0047 53.5153 0.0047 34.4752 C 0.0047 15.4351 21.0792 0 47.0758 0 C 73.0725 0 94.1469 15.4351 94.1469 34.4752 Z",
+      viewBoxWidth: 94.147,
+      viewBoxHeight: 120.008,
+      ...styleOverrides
+    },
+    fills,
+    rotation,
+    "voiceFrame"
+  );
+  node.presentation.opacity = opacity;
+  node.presentation["scale.y"] = scaleY;
+  return node;
+}
+
+function addVoiceGradientPreviewPhases(project: StudioProject) {
+  const outId = uniqueId("voiceGradientBreatheOut", project.phases);
+  const inId = uniqueId("voiceGradientBreatheIn", { ...project.phases, [outId]: {} as StudioPhase });
+  project.phases[outId] = {
+    id: outId,
+    name: "Voice Gradient Breathe Out",
+    mode: "deltaFromPrevious",
+    startDelay: 0,
+    nextMode: "atTime",
+    nextAt: 0.82,
+    targets: [
+      { select: { role: "voiceGradient", properties: ["scale"] }, value: 0.035 },
+      { select: { role: "voiceGradient", properties: ["opacity"] }, value: -0.08 }
+    ],
+    rules: [
+      { select: { role: "voiceGradient", properties: ["scale", "opacity"] }, motion: { type: "spring", response: 0.82, dampingFraction: 0.72 } }
+    ],
+    arcs: [],
+    jiggles: [],
+    actions: []
+  };
+  project.phases[inId] = {
+    id: inId,
+    name: "Voice Gradient Breathe In",
+    mode: "deltaFromPrevious",
+    startDelay: 0,
+    nextMode: "atTime",
+    nextAt: 0.72,
+    targets: [
+      { select: { role: "voiceGradient", properties: ["scale"] }, value: -0.035 },
+      { select: { role: "voiceGradient", properties: ["opacity"] }, value: 0.08 }
+    ],
+    rules: [
+      { select: { role: "voiceGradient", properties: ["scale", "opacity"] }, motion: { type: "spring", response: 0.72, dampingFraction: 0.82 } }
+    ],
+    arcs: [],
+    jiggles: [],
+    actions: []
+  };
+  project.phaseOrder = [outId, inId, ...project.phaseOrder];
+  return outId;
 }
 
 function createInstanceAt(
@@ -2838,8 +6102,12 @@ function syncInstancesOfComponent(project: StudioProject, componentId: string) {
 }
 
 function visualBackground(style: Record<string, unknown>, kind: NodeKindChoice, fills: MotionFill[] = []) {
+  if (kind === "image") return "transparent";
   if (fills.length > 0) {
     return cssFill(fills[0]);
+  }
+  if (kind === "zstack" || kind === "vstack" || kind === "hstack") {
+    return typeof style.backgroundColor === "string" ? String(style.backgroundColor) : "transparent";
   }
 
   const start = String(style.backgroundColor ?? (kind === "text" ? "transparent" : "#5ED8FF"));
@@ -2850,8 +6118,22 @@ function visualBackground(style: Record<string, unknown>, kind: NodeKindChoice, 
   return `linear-gradient(${angle}deg, ${start}, ${end})`;
 }
 
+function imageBackground(style: Record<string, unknown>) {
+  const url = typeof style.imageUrl === "string" ? style.imageUrl : undefined;
+  if (!url) return undefined;
+  return `url("${url}")`;
+}
+
+function cssBlendMode(value: unknown): React.CSSProperties["mixBlendMode"] {
+  if (value === "screen") return "screen";
+  if (value === "colorDodge" || value === "color-dodge") return "color-dodge";
+  if (value === "plusLighter" || value === "plus-lighter") return "plus-lighter";
+  if (value === "multiply") return "multiply";
+  return "normal";
+}
+
 function visualEffects(style: Record<string, unknown>, scale = 1) {
-  const blur = Math.max(0, numberValue(style.blur, 0) * scale);
+  const blur = renderBlur(style) * scale;
   const strokeWidth = Math.max(0, numberValue(style.strokeWidth, 0) * scale);
   const shadowBlur = Math.max(0, numberValue(style.shadowBlur, 0) * scale);
   const shadowX = numberValue(style.shadowX, 0) * scale;
@@ -2875,6 +6157,11 @@ function visualEffects(style: Record<string, unknown>, scale = 1) {
   return effects;
 }
 
+function renderBlur(style: Record<string, unknown>) {
+  if (typeof style.blur === "number") return Math.max(0, style.blur);
+  return Math.max(0, numberValue(style.figmaBlur, 0) / 2);
+}
+
 function fillsFromStyle(style: Record<string, unknown>, kind: NodeKindChoice): MotionFill[] {
   if (kind === "text" && style.backgroundColor === undefined) return [];
 
@@ -2893,7 +6180,12 @@ function cssFill(fill: MotionFill | undefined) {
   const stops = fill.colors
     .map((stop) => `${colorWithOpacity(stop.color, (stop.opacity ?? 1) * (fill.opacity ?? 1))} ${Math.round(stop.position * 100)}%`)
     .join(", ");
-  if (fill.type === "radialGradient") return `radial-gradient(circle, ${stops})`;
+  if (fill.type === "radialGradient") {
+    const centerX = clamp(fill.centerX ?? 0.5, -1, 2) * 100;
+    const centerY = clamp(fill.centerY ?? 0.5, -1, 2) * 100;
+    const radius = fill.radius !== undefined ? `${round(fill.radius)}px` : "farthest-side";
+    return `radial-gradient(circle ${radius} at ${round(centerX)}% ${round(centerY)}%, ${stops})`;
+  }
   return `linear-gradient(${fill.angle ?? 90}deg, ${stops})`;
 }
 
