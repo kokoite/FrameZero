@@ -116,11 +116,7 @@ struct MotionFill: Decodable, Equatable {
         centerX = try container.decodeFiniteDoubleIfPresent(forKey: .centerX)
         centerY = try container.decodeFiniteDoubleIfPresent(forKey: .centerY)
         radius = try container.decodeFinitePositiveDoubleIfPresent(forKey: .radius)
-        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
-
-        if let opacity, opacity > 1 {
-            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Fill opacity must be between 0 and 1")
-        }
+        opacity = try container.decodeUnitIntervalIfPresent(forKey: .opacity)
 
         switch type {
         case .solid:
@@ -156,13 +152,10 @@ struct MotionColorStop: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         color = try container.decode(String.self, forKey: .color)
         position = try container.decodeFiniteDouble(forKey: .position)
-        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+        opacity = try container.decodeUnitIntervalIfPresent(forKey: .opacity)
 
         if position < 0 || position > 1 {
             throw DecodingError.dataCorruptedError(forKey: .position, in: container, debugDescription: "Color stop position must be between 0 and 1")
-        }
-        if let opacity, opacity > 1 {
-            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Color stop opacity must be between 0 and 1")
         }
     }
 }
@@ -721,6 +714,8 @@ struct MotionPointValue: Decodable {
     let y: MotionValue
 }
 
+// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
+// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrailSpec: Decodable {
     let color: String?
     let width: Double?
@@ -740,6 +735,8 @@ struct MotionTrailSpec: Decodable {
     let glowInnerScale: Double?
 }
 
+// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
+// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrajectorySpec: Decodable {
     let color: String?
     let points: Int?
@@ -789,6 +786,21 @@ struct SpringSpec: Decodable, Equatable {
     let type: String
     let response: Double
     let dampingFraction: Double
+}
+
+extension SpringSpec {
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case response
+        case dampingFraction
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        response = try container.decodeFinitePositiveDouble(forKey: .response)
+        dampingFraction = try container.decodeOpenUnitInterval(forKey: .dampingFraction)
+    }
 }
 
 struct TimedSpec: Decodable, Equatable {
