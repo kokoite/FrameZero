@@ -88,6 +88,31 @@ button:disabled {
   opacity: 0.45;
 }
 
+/* F-01: Global keyboard focus ring (WCAG 2.4.7) */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgba(94, 216, 255, 0.82);
+  outline-offset: 2px;
+}
+
+/* F-01: Carve out canvas-frame subtree — selection handles handle their own focus */
+.canvas-frame :focus-visible,
+.phone-canvas :focus-visible,
+.canvas-node:focus-visible,
+.selection-handle:focus-visible {
+  outline: none;
+}
+
+/* F-01: Re-enable focus ring on canvas-side-tools buttons (carved out by .canvas-frame override above) */
+.canvas-side-tools button:focus-visible {
+  outline: 2px solid rgba(94, 216, 255, 0.82);
+  outline-offset: 2px;
+}
+
 button.primary {
   border-color: rgba(142, 167, 255, 0.88);
   background: linear-gradient(rgba(111, 141, 255, 0.92), rgba(85, 111, 215, 0.82));
@@ -620,7 +645,8 @@ section {
   font-weight: 520;
 }
 
-.asset-search input:focus {
+.asset-search input:focus,
+.asset-search input:focus-visible {
   border-color: rgba(94, 216, 255, 0.68);
   box-shadow: 0 0 0 2px rgba(94, 216, 255, 0.12);
   outline: none;
@@ -2336,7 +2362,7 @@ pre {
   white-space: pre;
 }
 
-pre:focus {
+pre:focus-visible {
   outline: 1px solid rgba(94, 216, 255, 0.56);
   outline-offset: -1px;
 }
