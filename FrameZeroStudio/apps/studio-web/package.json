@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests",
-    "typecheck": "tsc -b"
+    "test": "vitest run --config ../../vitest.config.ts --passWithNoTests && pnpm run visual:planet-1",
+    "typecheck": "tsc -b",
+    "visual:planet-1": "python3 scripts/compare_planet_1.py",
+    "visual:voice-gradient": "python3 scripts/compare_voice_gradient.py"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

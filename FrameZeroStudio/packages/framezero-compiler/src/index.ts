@@ -53,6 +53,7 @@ export type StudioComponent = {
   name: string;
   rootNodeId?: string;
   nodeIds?: string[];
+  nodes?: Record<string, StudioNode>;
   kind?: MotionNode["kind"];
   roles?: string[];
   layout?: Record<string, MotionValue>;
@@ -173,7 +174,7 @@ function compileStates(project: StudioProject): MotionDocument["machines"][numbe
     const phase = requirePhase(project, phaseId);
     const values = phase.mode === "deltaFromPrevious"
       ? compileDeltaTargets(project, phase.targets, previousConcrete)
-      : phase.targets;
+      : phase.targets.filter((target) => selectorMatchesLiveNodes(project, target.select));
 
     states.push({
       id: `state${index + 1}`,
@@ -206,7 +207,7 @@ function compileDeltaTargets(
   targets: MotionAssignment[],
   previousConcrete: Record<string, MotionValue>
 ): MotionAssignment[] {
-  return targets.map((target) => {
+  return targets.filter((target) => selectorMatchesLiveNodes(project, target.select)).map((target) => {
     const keys = resolveAssignmentKeys(project, target);
     if (keys.length !== 1) {
       return target;
@@ -244,9 +245,9 @@ function compileTransitions(project: StudioProject): MotionDocument["machines"][
       to: `state${index + 1}`,
       trigger,
       delay,
-      rules: phase.rules,
-      arcs: phase.arcs,
-      jiggles: phase.jiggles,
+      rules: phase.rules.filter((rule) => selectorMatchesLiveNodes(project, rule.select)),
+      arcs: phase.arcs.filter((arc) => selectorMatchesLiveNodes(project, arc.select)),
+      jiggles: phase.jiggles.filter((jiggle) => selectorMatchesLiveNodes(project, jiggle.select)),
       enter: [],
       exit: [],
       spawns: [],
@@ -346,6 +347,18 @@ function resolveAssignmentKeys(project: StudioProject, assignment: MotionAssignm
       .map((node) => node.id);
 
   return nodeIds.flatMap((nodeId: string) => selector.properties.map((property: string) => `${nodeId}.${property}`));
+}
+
+function selectorMatchesLiveNodes(project: StudioProject, selector: { id?: string | undefined; role?: string | undefined }) {
+  if (selector.id !== undefined) {
+    return project.nodes[selector.id] !== undefined;
+  }
+
+  if (selector.role !== undefined) {
+    return Object.values(project.nodes).some((node) => node.roles.includes(selector.role as string));
+  }
+
+  return false;
 }
 
 function isAnimatedProperty(property: string): property is (typeof animatedProperties)[number] {
