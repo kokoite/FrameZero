@@ -1678,7 +1678,7 @@ function App() {
             <div className="grid" />
             <div className="axis x-axis" />
             <div className="axis y-axis" />
-            <span className="artboard-label">600 x 400</span>
+            <span className="artboard-label">{canvasWidth} × {canvasHeight}</span>
             <span className="origin-label">origin</span>
             <div className="ruler ruler-top" aria-hidden="true">
               {rulerTicks(canvasWidth).map((tick) => <span key={tick} style={{ left: `${(tick / canvasWidth) * 100}%` }}>{tick}</span>)}
@@ -2332,6 +2332,17 @@ function NumberField({ label, value, onChange, step = 1 }: { label: string; valu
     setDraft(Number.isFinite(parsed) ? String(round(parsed)) : String(round(value)));
   }
 
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+
+    event.preventDefault();
+    const stepValue = step ?? 1;
+    const factor = event.shiftKey ? 10 : 1;
+    const delta = (event.key === "ArrowUp" ? 1 : -1) * stepValue * factor;
+    const current = typeof value === "number" ? value : parseFloat(String(value)) || 0;
+    onChange(current + delta);
+  }
+
   return (
     <label>
       {label}
@@ -2341,6 +2352,7 @@ function NumberField({ label, value, onChange, step = 1 }: { label: string; valu
         data-step={step}
         value={draft}
         onBlur={normalize}
+        onKeyDown={handleKeyDown}
         onChange={(event) => commit(event.target.value)}
       />
     </label>

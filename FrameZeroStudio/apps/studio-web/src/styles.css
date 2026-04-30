@@ -23,6 +23,8 @@
   --ae-accent-strong: #6f8dff;
   --ae-cyan: #5ed8ff;
   --ae-purple: #b58cff;
+  --ae-radius-sm: 4px;
+  --ae-radius-md: 6px;
   font-family:
     "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1, "cv04" 1;
@@ -69,7 +71,7 @@ textarea {
 button {
   min-height: 28px;
   border: 1px solid var(--ae-border);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background: linear-gradient(#303036, #25252a);
   color: var(--ae-text);
   cursor: pointer;
@@ -131,7 +133,7 @@ select {
   width: 100%;
   min-height: 26px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px 8px;
   background: rgba(9, 9, 13, 0.86);
   color: var(--ae-text);
@@ -185,7 +187,7 @@ label {
   grid-template-columns: minmax(0, var(--left-panel-width, 180px)) minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 12px;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px 10px;
   background: var(--ae-panel-deep);
 }
@@ -230,7 +232,7 @@ label {
   align-items: center;
   gap: 6px;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   padding: 3px;
   background: rgba(255, 255, 255, 0.025);
 }
@@ -284,7 +286,7 @@ label {
   flex: 0 0 auto;
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   background: rgba(255, 255, 255, 0.025);
 }
 
@@ -318,7 +320,7 @@ label {
 
 .panel {
   position: relative;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 7px;
   overflow: auto;
 }
@@ -389,7 +391,7 @@ label {
   grid-row: 2;
   display: grid;
   grid-template-rows: auto 1fr;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
 }
 
 .right-panel {
@@ -409,7 +411,7 @@ label {
 
 .inspector-tabs {
   position: sticky;
-  top: -8px;
+  top: 0;
   z-index: 12;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -417,7 +419,7 @@ label {
   margin: -2px -1px 8px;
   padding: 3px;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background: rgba(27, 27, 31, 0.96);
   backdrop-filter: blur(10px);
 }
@@ -440,7 +442,7 @@ label {
 .timeline-panel {
   grid-column: 2;
   grid-row: 3;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 6px 8px;
   overflow: hidden;
   background: #1d1d21;
@@ -471,7 +473,7 @@ label {
   gap: 3px;
   margin-top: 11px;
   border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 3px;
   background: rgba(255, 255, 255, 0.025);
 }
@@ -631,7 +633,7 @@ section {
   width: 100%;
   height: 32px;
   border: 1px solid rgba(142, 167, 255, 0.2);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   padding: 0 10px;
   background: rgba(5, 7, 12, 0.68);
   color: var(--ae-text);
@@ -652,7 +654,7 @@ section {
   gap: 8px;
   margin-bottom: 11px;
   border: 1px solid rgba(142, 167, 255, 0.14);
-  border-radius: 6px;
+  border-radius: var(--ae-radius-md);
   padding: 8px;
   background: rgba(255, 255, 255, 0.024);
 }
@@ -675,8 +677,8 @@ section {
   border-color: rgba(94, 216, 255, 0.28);
   background: rgba(94, 216, 255, 0.08);
   color: rgba(238, 252, 255, 0.9);
-  font-size: 9.5px;
-  font-weight: 650;
+  font-size: 11px;
+  font-weight: 620;
   text-transform: none;
 }
 
@@ -725,7 +727,7 @@ section {
   gap: 10px;
   min-height: 54px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   padding: 6px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.018)),
@@ -767,7 +769,7 @@ section {
   width: 38px;
   height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.34),
     0 8px 20px rgba(0, 0, 0, 0.24);
@@ -855,7 +857,7 @@ section {
   width: 100%;
   min-height: 0;
   text-align: left;
-  border-radius: 6px;
+  border-radius: var(--ae-radius-md);
   background: var(--ae-panel-soft);
 }
 
@@ -900,7 +902,7 @@ section {
   min-height: 62px;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   background: rgba(255, 255, 255, 0.018);
   text-align: left;
 }
@@ -922,7 +924,7 @@ section {
 .component-swatch.layered {
   position: relative;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background: #05070c;
 }
 
@@ -967,7 +969,7 @@ section {
   padding: 2px 6px;
   background: rgba(142, 167, 255, 0.075);
   color: rgba(220, 226, 240, 0.68);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 680;
   text-transform: uppercase;
 }
@@ -976,6 +978,7 @@ section {
   border-color: rgba(94, 216, 255, 0.24);
   background: rgba(94, 216, 255, 0.08);
   color: rgba(213, 247, 255, 0.76);
+  font-size: 10px;
 }
 
 .component-row.source-active {
@@ -1025,7 +1028,7 @@ section {
 .component-layer-row {
   min-height: 44px;
   border: 1px solid rgba(142, 167, 255, 0.12);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px;
   background: rgba(255, 255, 255, 0.025);
 }
@@ -1061,7 +1064,7 @@ section {
   height: 32px;
   overflow: hidden;
   border: 1px solid rgba(142, 167, 255, 0.18);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background:
     linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.05) 75%),
     linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25% 75%, rgba(255, 255, 255, 0.05) 75%),
@@ -1089,7 +1092,7 @@ section {
 }
 
 .component-swatch.component-text {
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
 }
 
 .asset-actions {
@@ -1128,7 +1131,7 @@ section {
   min-height: 128px;
   margin-bottom: 12px;
   border: 1px solid var(--ae-border-soft);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
@@ -1155,7 +1158,7 @@ section {
   height: 112px;
   overflow: hidden;
   border: 1px solid rgba(142, 167, 255, 0.22);
-  border-radius: 6px;
+  border-radius: var(--ae-radius-md);
   background: #05070c;
 }
 
@@ -1165,7 +1168,7 @@ section {
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--ae-border);
-  border-radius: 5px;
+  border-radius: var(--ae-radius-sm);
   background: rgba(9, 10, 14, 0.82);
 }
 
@@ -1173,7 +1176,7 @@ section {
   min-height: 26px;
   padding: 0 9px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   background: transparent;
   color: var(--ae-muted);
   font: inherit;
@@ -1257,7 +1260,7 @@ section {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--ae-border);
-  border-radius: 6px;
+  border-radius: var(--ae-radius-md);
   background: rgba(18, 19, 25, 0.76);
 }
 
@@ -1361,7 +1364,7 @@ section {
 
 .role-pill {
   border: 1px solid rgba(142, 167, 255, 0.4);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px 8px;
   background: rgba(111, 141, 255, 0.14);
   color: #dfe6ff;
@@ -1377,7 +1380,7 @@ section {
   min-width: 0;
   max-width: 100%;
   border: 1px solid rgba(142, 167, 255, 0.24);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 6px 9px;
   background: rgba(142, 167, 255, 0.08);
   color: rgba(220, 226, 240, 0.78);
@@ -1433,7 +1436,7 @@ section {
   min-height: 420px;
   overflow: hidden;
   border: 1px solid rgba(142, 167, 255, 0.42);
-  border-radius: 6px;
+  border-radius: var(--ae-radius-md);
   background: #0f0f14;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.025),
@@ -1529,7 +1532,7 @@ section {
   z-index: 7;
   max-width: min(260px, calc(100% - 20px));
   border: 1px solid rgba(142, 167, 255, 0.16);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px 7px;
   background: rgba(17, 17, 22, 0.68);
   color: rgba(220, 226, 240, 0.54);
@@ -1868,7 +1871,7 @@ section {
 .bridge-message {
   grid-column: 1 / -1;
   min-width: 0;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 8px 9px;
   background: #18181c;
   color: var(--ae-muted);
@@ -1962,7 +1965,7 @@ section {
   place-items: center;
   min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   color: #fff;
   font-size: 12px;
   font-weight: 560;
@@ -1987,7 +1990,7 @@ section {
 
 .nested-editor {
   border: 1px solid var(--ae-border-soft);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 9px;
   background: #1b1b20;
 }
@@ -2005,7 +2008,7 @@ section {
   gap: 8px;
   margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 8px;
   background: rgba(255, 255, 255, 0.014);
 }
@@ -2058,7 +2061,7 @@ section {
 .inline-note {
   grid-column: 1 / -1;
   border: 1px solid rgba(142, 167, 255, 0.2);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 7px 8px;
   background: rgba(111, 141, 255, 0.08);
   color: rgba(220, 226, 240, 0.68);
@@ -2131,7 +2134,7 @@ section {
   display: grid;
   gap: 2px;
   border: 1px solid rgba(94, 216, 255, 0.14);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 7px;
   background: rgba(94, 216, 255, 0.055);
   color: rgba(220, 226, 240, 0.72);
@@ -2157,7 +2160,7 @@ section {
   gap: 2px;
   min-height: 42px;
   border: 1px solid rgba(94, 216, 255, 0.11);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 7px;
   background: rgba(94, 216, 255, 0.035);
   color: rgba(220, 226, 240, 0.68);
@@ -2284,7 +2287,7 @@ pre {
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable both-edges;
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 10px;
   background: #151519;
   color: #cfd1d8;
@@ -2373,7 +2376,7 @@ pre::-webkit-scrollbar-thumb:hover {
   max-width: 100%;
   overflow: hidden;
   border: 1px solid rgba(142, 167, 255, 0.24);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 5px 8px;
   background: rgba(142, 167, 255, 0.08);
   color: rgba(238, 242, 255, 0.82);
@@ -2486,7 +2489,7 @@ pre::-webkit-scrollbar-thumb:hover {
 
 .flow-steps span {
   border: 1px solid rgba(142, 167, 255, 0.34);
-  border-radius: 4px;
+  border-radius: var(--ae-radius-sm);
   padding: 6px 8px;
   background: rgba(142, 167, 255, 0.1);
   color: #eef2ff;
