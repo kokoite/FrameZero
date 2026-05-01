@@ -93,6 +93,7 @@ export type StudioPhase = {
     direction: "clockwise" | "anticlockwise";
     bend?: number;
     motion: MotionSpec;
+    stagger?: number;
     motionSensitivity?: MotionSensitivityLevel;
   }>;
   jiggles: Array<{
@@ -102,6 +103,7 @@ export type StudioPhase = {
     cycles: number;
     startDirection: "negative" | "positive" | "clockwise" | "anticlockwise";
     decay?: number;
+    stagger?: number;
     motionSensitivity?: MotionSensitivityLevel;
   }>;
   actions: MotionAction[];
@@ -264,20 +266,29 @@ function compileTransitions(project: StudioProject): MotionDocument["machines"][
       rules: phase.rules
         .filter((rule) => selectorMatchesLiveNodes(project, rule.select))
         .map((rule) => {
-          const { motionSensitivity, ...rest } = rule;
-          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+          const { motionSensitivity, stagger, ...rest } = rule;
+          let out: typeof rest & { stagger?: number; motionSensitivity?: MotionSensitivityLevel } = rest;
+          if (stagger !== undefined) out = { ...out, stagger };
+          if (motionSensitivity !== undefined) out = { ...out, motionSensitivity };
+          return out;
         }),
       arcs: phase.arcs
         .filter((arc) => selectorMatchesLiveNodes(project, arc.select))
         .map((arc) => {
-          const { motionSensitivity, ...rest } = arc;
-          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+          const { motionSensitivity, stagger, ...rest } = arc;
+          let out: typeof rest & { stagger?: number; motionSensitivity?: MotionSensitivityLevel } = rest;
+          if (stagger !== undefined) out = { ...out, stagger };
+          if (motionSensitivity !== undefined) out = { ...out, motionSensitivity };
+          return out;
         }),
       jiggles: phase.jiggles
         .filter((jiggle) => selectorMatchesLiveNodes(project, jiggle.select))
         .map((jiggle) => {
-          const { motionSensitivity, ...rest } = jiggle;
-          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+          const { motionSensitivity, stagger, ...rest } = jiggle;
+          let out: typeof rest & { stagger?: number; motionSensitivity?: MotionSensitivityLevel } = rest;
+          if (stagger !== undefined) out = { ...out, stagger };
+          if (motionSensitivity !== undefined) out = { ...out, motionSensitivity };
+          return out;
         }),
       enter: [],
       exit: [],

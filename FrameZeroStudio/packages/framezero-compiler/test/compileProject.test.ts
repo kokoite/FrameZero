@@ -120,6 +120,24 @@ describe("compileStudioProject", () => {
     expect(transition?.jiggles[0]).not.toHaveProperty("motionSensitivity");
   });
 
+  it("forwards per-rule stagger when defined", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.phases.communicatingGesture.rules[0]!.stagger = 0.05;
+
+    const result = compileStudioProject(project);
+    const transition = result.document.machines[0]?.transitions[0];
+
+    expect(transition?.rules[0]?.stagger).toBe(0.05);
+    expect(result.json).toContain('"stagger": 0.05');
+  });
+
+  it("omits per-rule stagger when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const transition = result.document.machines[0]?.transitions[0];
+
+    expect(transition?.rules[0]).not.toHaveProperty("stagger");
+  });
+
   it("preserves nested locked image component layers in runtime JSON", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.screen.childIds = ["card", "title"];

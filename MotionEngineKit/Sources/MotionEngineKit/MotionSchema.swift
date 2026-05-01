@@ -611,7 +611,25 @@ struct MotionRule: Decodable {
     let select: MotionPropertySelector
     let motion: MotionSpec
     let delay: Double?
+    let stagger: Double?
     let motionSensitivity: MotionSensitivity?
+
+    private enum CodingKeys: String, CodingKey {
+        case select
+        case motion
+        case delay
+        case stagger
+        case motionSensitivity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        select = try container.decode(MotionPropertySelector.self, forKey: .select)
+        motion = try container.decode(MotionSpec.self, forKey: .motion)
+        delay = try container.decodeIfPresent(Double.self, forKey: .delay)
+        stagger = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .stagger)
+        motionSensitivity = try container.decodeIfPresent(MotionSensitivity.self, forKey: .motionSensitivity)
+    }
 }
 
 struct MotionArcRule: Decodable {
@@ -621,7 +639,31 @@ struct MotionArcRule: Decodable {
     let direction: MotionArcDirection
     let bend: Double?
     let motion: MotionSpec
+    let stagger: Double?
     let motionSensitivity: MotionSensitivity?
+
+    private enum CodingKeys: String, CodingKey {
+        case select
+        case x
+        case y
+        case direction
+        case bend
+        case motion
+        case stagger
+        case motionSensitivity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        select = try container.decode(MotionNodeSelector.self, forKey: .select)
+        x = try container.decode(String.self, forKey: .x)
+        y = try container.decode(String.self, forKey: .y)
+        direction = try container.decode(MotionArcDirection.self, forKey: .direction)
+        bend = try container.decodeIfPresent(Double.self, forKey: .bend)
+        motion = try container.decode(MotionSpec.self, forKey: .motion)
+        stagger = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .stagger)
+        motionSensitivity = try container.decodeIfPresent(MotionSensitivity.self, forKey: .motionSensitivity)
+    }
 }
 
 enum MotionArcDirection: String, Decodable {
@@ -636,7 +678,31 @@ struct MotionJiggleRule: Decodable {
     let cycles: Double
     let startDirection: MotionJiggleDirection
     let decay: Double?
+    let stagger: Double?
     let motionSensitivity: MotionSensitivity?
+
+    private enum CodingKeys: String, CodingKey {
+        case select
+        case amplitude
+        case duration
+        case cycles
+        case startDirection
+        case decay
+        case stagger
+        case motionSensitivity
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        select = try container.decode(MotionPropertySelector.self, forKey: .select)
+        amplitude = try container.decode(MotionValue.self, forKey: .amplitude)
+        duration = try container.decode(Double.self, forKey: .duration)
+        cycles = try container.decode(Double.self, forKey: .cycles)
+        startDirection = try container.decode(MotionJiggleDirection.self, forKey: .startDirection)
+        decay = try container.decodeIfPresent(Double.self, forKey: .decay)
+        stagger = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .stagger)
+        motionSensitivity = try container.decodeIfPresent(MotionSensitivity.self, forKey: .motionSensitivity)
+    }
 }
 
 enum MotionJiggleDirection: String, Decodable {

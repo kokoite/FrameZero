@@ -30,6 +30,86 @@ describe("motionDocumentSchema", () => {
     expect(Object.keys(transition?.rules[0] ?? {})).not.toContain("motionSensitivity");
   });
 
+  it("accepts rule stagger values without changing them", () => {
+    const parsed = parseMotionDocument(minimalMotionDocument({
+      rule: { stagger: 0.06 }
+    }));
+
+    expect(parsed.machines[0]?.transitions[0]?.rules[0]?.stagger).toBe(0.06);
+  });
+
+  it("rejects negative rule stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { stagger: -0.1 }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects string rule stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { stagger: "0.1" }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects NaN rule stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { stagger: Number.NaN }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative arc stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      arc: { stagger: -0.1 }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects string arc stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      arc: { stagger: "0.1" }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects NaN arc stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      arc: { stagger: Number.NaN }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative jiggle stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      jiggle: { stagger: -0.1 }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects string jiggle stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      jiggle: { stagger: "0.1" }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects NaN jiggle stagger values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      jiggle: { stagger: Number.NaN }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
   it("accepts a role selector that targets multiple existing components", () => {
     const result = safeParseMotionDocument({
       schemaVersion: 1,
@@ -445,6 +525,8 @@ describe("preview protocol schemas", () => {
 function minimalMotionDocument(options: {
   reduceMotionPolicy?: unknown;
   rule?: Record<string, unknown>;
+  arc?: Record<string, unknown>;
+  jiggle?: Record<string, unknown>;
 } = {}) {
   return {
     schemaVersion: 1,
@@ -475,8 +557,26 @@ function minimalMotionDocument(options: {
                 ...options.rule
               }
             ],
-            arcs: [],
-            jiggles: [],
+            arcs: options.arc === undefined ? [] : [
+              {
+                select: { id: "card" },
+                x: "offset.x",
+                y: "offset.y",
+                direction: "clockwise",
+                motion: { type: "timed", duration: 0.4 },
+                ...options.arc
+              }
+            ],
+            jiggles: options.jiggle === undefined ? [] : [
+              {
+                select: { id: "card", properties: ["offset.x"] },
+                amplitude: 10,
+                duration: 0.4,
+                cycles: 2,
+                startDirection: "positive",
+                ...options.jiggle
+              }
+            ],
             actions: []
           }
         ]

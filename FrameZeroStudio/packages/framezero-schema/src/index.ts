@@ -197,6 +197,7 @@ export const motionRuleSchema = z.object({
   select: propertySelectorSchema,
   motion: motionSpecSchema,
   delay: nonNegativeNumberSchema.optional(),
+  stagger: nonNegativeNumberSchema.optional(),
   motionSensitivity: motionSensitivitySchema.optional()
 });
 
@@ -207,6 +208,7 @@ export const arcRuleSchema = z.object({
   direction: z.enum(["clockwise", "anticlockwise"]),
   bend: finiteNumberSchema.optional(),
   motion: motionSpecSchema,
+  stagger: nonNegativeNumberSchema.optional(),
   motionSensitivity: motionSensitivitySchema.optional()
 });
 
@@ -217,6 +219,7 @@ export const jiggleRuleSchema = z.object({
   cycles: positiveNumberSchema,
   startDirection: z.enum(["negative", "positive", "clockwise", "anticlockwise"]),
   decay: nonNegativeNumberSchema.optional(),
+  stagger: nonNegativeNumberSchema.optional(),
   motionSensitivity: motionSensitivitySchema.optional()
 });
 

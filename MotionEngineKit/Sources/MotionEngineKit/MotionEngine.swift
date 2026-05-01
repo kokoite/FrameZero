@@ -43,6 +43,7 @@ struct MotionArcRuntime {
     let endY: Double
     let bend: Double
     let direction: MotionArcDirection
+    var delayUntilStart: Double
     var progress: MotionChannel
 }
 
@@ -54,6 +55,7 @@ struct MotionJiggleRuntime {
     let cycles: Double
     let startDirection: MotionJiggleDirection
     let decay: Double
+    var delayUntilStart: Double
     var elapsed: Double
 }
 
@@ -1249,6 +1251,9 @@ public final class MotionEngine {
                 if let delay = rule.delay, (!delay.isFinite || delay < 0) {
                     throw MotionRuntimeError.validation("Rule delay must be finite and non-negative in transition '\(transition.id)'")
                 }
+                if let stagger = rule.stagger, (!stagger.isFinite || stagger < 0) {
+                    throw MotionRuntimeError.validation("Rule stagger must be finite and non-negative in transition '\(transition.id)'")
+                }
             }
 
             if let delay = transition.delay, (!delay.isFinite || delay < 0) {
@@ -1259,11 +1264,17 @@ public final class MotionEngine {
                 try validateNodeSelector(arc.select, context: "arc in transition '\(transition.id)'")
                 try validateArc(arc, context: "transition '\(transition.id)'")
                 try validateMotion(arc.motion, context: "arc in transition '\(transition.id)'")
+                if let stagger = arc.stagger, (!stagger.isFinite || stagger < 0) {
+                    throw MotionRuntimeError.validation("Arc stagger must be finite and non-negative in transition '\(transition.id)'")
+                }
             }
 
             for jiggle in transition.jiggles {
                 _ = try resolve(jiggle.select)
                 try validateJiggle(jiggle, context: "transition '\(transition.id)'")
+                if let stagger = jiggle.stagger, (!stagger.isFinite || stagger < 0) {
+                    throw MotionRuntimeError.validation("Jiggle stagger must be finite and non-negative in transition '\(transition.id)'")
+                }
             }
 
             for action in transition.actions {
@@ -2024,51 +2035,59 @@ public final class MotionEngine {
                 throw MotionRuntimeError.validation("Only numeric state assignments are supported in Phase 1")
             }
 
-            for key in keys {
-                let rule = transitionRule(for: key, transition: transition)
-                let motion = rule?.motion ?? defaultTransitionMotion()
-                var channel = channels[key] ?? MotionChannel(
-                    current: target,
-                    velocity: 0,
-                    target: target,
-                    motion: motion,
-                    animationStart: target,
-                    animationElapsed: 0
-                )
-                stateTargets[key] = assignment.value
-                if snap {
-                    channel.current = target
-                    channel.velocity = 0
-                    channel.setTarget(
-                        target,
-                        motion: motion,
-                        sensitivity: rule?.motionSensitivity,
-                        documentPolicy: documentPolicy,
-                        isMotionReduced: isMotionReduced
-                    )
-                } else if let delay = rule?.delay, delay > 0 {
-                    channel.target = channel.current
-                    channel.velocity = 0
-                    channel.motion = .immediate
-                    channel.animationStart = channel.current
-                    channel.animationElapsed = 0
-                    pendingTargets.append(PendingChannelTarget(
-                        key: key,
+            let keysByNodeID = Dictionary(grouping: keys, by: \.nodeID)
+
+            for (nodeIndex, nodeID) in keysByNodeID.keys.sorted().enumerated() {
+                let nodeKeys = (keysByNodeID[nodeID] ?? []).sorted { $0.property < $1.property }
+
+                for key in nodeKeys {
+                    let rule = transitionRule(for: key, transition: transition)
+                    let motion = rule?.motion ?? defaultTransitionMotion()
+                    let staggerIndex = try staggerNodeIndex(for: key.nodeID, rule: rule, fallbackIndex: nodeIndex)
+                    let totalDelay = (rule?.delay ?? 0) + ((rule?.stagger ?? 0) * Double(staggerIndex))
+                    var channel = channels[key] ?? MotionChannel(
+                        current: target,
+                        velocity: 0,
                         target: target,
                         motion: motion,
-                        sensitivity: rule?.motionSensitivity,
-                        remainingDelay: delay
-                    ))
-                } else {
-                    channel.setTarget(
-                        target,
-                        motion: motion,
-                        sensitivity: rule?.motionSensitivity,
-                        documentPolicy: documentPolicy,
-                        isMotionReduced: isMotionReduced
+                        animationStart: target,
+                        animationElapsed: 0
                     )
+                    stateTargets[key] = assignment.value
+                    if snap {
+                        channel.current = target
+                        channel.velocity = 0
+                        channel.setTarget(
+                            target,
+                            motion: motion,
+                            sensitivity: rule?.motionSensitivity,
+                            documentPolicy: documentPolicy,
+                            isMotionReduced: isMotionReduced
+                        )
+                    } else if totalDelay > 0 {
+                        channel.target = channel.current
+                        channel.velocity = 0
+                        channel.motion = .immediate
+                        channel.animationStart = channel.current
+                        channel.animationElapsed = 0
+                        pendingTargets.append(PendingChannelTarget(
+                            key: key,
+                            target: target,
+                            motion: motion,
+                            sensitivity: rule?.motionSensitivity,
+                            remainingDelay: totalDelay
+                        ))
+                    } else {
+                        channel.setTarget(
+                            target,
+                            motion: motion,
+                            sensitivity: rule?.motionSensitivity,
+                            documentPolicy: documentPolicy,
+                            isMotionReduced: isMotionReduced
+                        )
+                    }
+                    channels[key] = channel
                 }
-                channels[key] = channel
             }
         }
 
@@ -2089,6 +2108,12 @@ public final class MotionEngine {
         }
 
         return nil
+    }
+
+    private func staggerNodeIndex(for nodeID: NodeID, rule: MotionRule?, fallbackIndex: Int) throws -> Int {
+        guard let rule, (rule.stagger ?? 0) > 0 else { return fallbackIndex }
+        let nodeIDs = Array(Set(try resolve(rule.select).map(\.nodeID))).sorted()
+        return nodeIDs.firstIndex(of: nodeID) ?? fallbackIndex
     }
 
     private func defaultTransitionMotion() -> MotionSpec {
@@ -2131,7 +2156,7 @@ public final class MotionEngine {
         for arc in transition.arcs {
             let nodeIDs = try resolveNodeIDs(arc.select)
 
-            for nodeID in nodeIDs {
+            for (nodeIndex, nodeID) in nodeIDs.sorted().enumerated() {
                 let xKey = MotionChannelKey(nodeID: nodeID, property: arc.x)
                 let yKey = MotionChannelKey(nodeID: nodeID, property: arc.y)
                 guard let xChannel = channels[xKey], let yChannel = channels[yKey] else {
@@ -2149,7 +2174,7 @@ public final class MotionEngine {
                 channels[xKey] = MotionChannel(
                     current: startX,
                     velocity: 0,
-                    target: endX,
+                    target: startX,
                     motion: .immediate,
                     animationStart: startX,
                     animationElapsed: 0
@@ -2157,7 +2182,7 @@ public final class MotionEngine {
                 channels[yKey] = MotionChannel(
                     current: startY,
                     velocity: 0,
-                    target: endY,
+                    target: startY,
                     motion: .immediate,
                     animationStart: startY,
                     animationElapsed: 0
@@ -2189,6 +2214,7 @@ public final class MotionEngine {
                     endY: endY,
                     bend: bend,
                     direction: arc.direction,
+                    delayUntilStart: (arc.stagger ?? 0) * Double(nodeIndex),
                     progress: progress
                 ))
             }
@@ -2203,7 +2229,13 @@ public final class MotionEngine {
                 throw MotionRuntimeError.validation("Jiggle in transition '\(transition.id)' has unresolved amplitude")
             }
 
-            for key in try resolve(jiggle.select) {
+            let keys = try resolve(jiggle.select)
+            let keysByNodeID = Dictionary(grouping: keys, by: \.nodeID)
+
+            for (nodeIndex, nodeID) in keysByNodeID.keys.sorted().enumerated() {
+                let nodeKeys = (keysByNodeID[nodeID] ?? []).sorted { $0.property < $1.property }
+
+                for key in nodeKeys {
                 guard var channel = channels[key] else {
                     throw MotionRuntimeError.validation("Jiggle in transition '\(transition.id)' references missing \(key.nodeID).\(key.property) channel")
                 }
@@ -2222,8 +2254,10 @@ public final class MotionEngine {
                     cycles: jiggle.cycles,
                     startDirection: jiggle.startDirection,
                     decay: jiggle.decay ?? 0,
+                    delayUntilStart: (jiggle.stagger ?? 0) * Double(nodeIndex),
                     elapsed: 0
                 ))
+                }
             }
         }
     }
@@ -2628,7 +2662,20 @@ public final class MotionEngine {
         }
 
         for index in activeArcs.indices.reversed() {
-            activeArcs[index].progress.integrate(dt: dt)
+            let effectiveDT: Double
+            if activeArcs[index].delayUntilStart > 0 {
+                activeArcs[index].delayUntilStart -= dt
+                if activeArcs[index].delayUntilStart > 0 {
+                    hasActiveChannels = true
+                    continue
+                }
+                effectiveDT = -activeArcs[index].delayUntilStart
+                activeArcs[index].delayUntilStart = 0
+            } else {
+                effectiveDT = dt
+            }
+
+            activeArcs[index].progress.integrate(dt: effectiveDT)
             let arc = activeArcs[index]
             let progress = min(max(arc.progress.current, 0), 1)
             let point = arc.point(at: progress)
@@ -2650,12 +2697,14 @@ public final class MotionEngine {
             if arc.progress.isSettled {
                 if var xChannel = channels[xKey] {
                     xChannel.current = arc.endX
+                    xChannel.target = arc.endX
                     xChannel.velocity = 0
                     channels[xKey] = xChannel
                 }
 
                 if var yChannel = channels[yKey] {
                     yChannel.current = arc.endY
+                    yChannel.target = arc.endY
                     yChannel.velocity = 0
                     channels[yKey] = yChannel
                 }
@@ -2667,7 +2716,20 @@ public final class MotionEngine {
         }
 
         for index in activeJiggles.indices.reversed() {
-            activeJiggles[index].elapsed += dt
+            let effectiveDT: Double
+            if activeJiggles[index].delayUntilStart > 0 {
+                activeJiggles[index].delayUntilStart -= dt
+                if activeJiggles[index].delayUntilStart > 0 {
+                    hasActiveChannels = true
+                    continue
+                }
+                effectiveDT = -activeJiggles[index].delayUntilStart
+                activeJiggles[index].delayUntilStart = 0
+            } else {
+                effectiveDT = dt
+            }
+
+            activeJiggles[index].elapsed += effectiveDT
             let jiggle = activeJiggles[index]
             let progress = min(max(jiggle.elapsed / jiggle.duration, 0), 1)
             let value = jiggle.value(at: progress)
