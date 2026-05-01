@@ -1,6 +1,7 @@
 import type { MotionDocument, MotionNode } from "@framezero/schema";
 import { visibleOpacity } from "./color";
 import { drawNodeShape } from "./draw";
+import { applyLayerBlur, mapBlendMode, resolveBlendMode, resolveLayerBlur } from "./effects";
 import { type LayoutMap, type Size, measureTree, nodeMap, styleString } from "./layout";
 
 export interface MotionRuntime {
@@ -76,6 +77,7 @@ export class MotionCanvasRenderer {
       this.ctx.save();
       this.ctx.translate(-rootSize.width / 2, -rootSize.height / 2);
       this.ctx.globalAlpha *= visibleOpacity(this.runtime.valueFor(root.id, "opacity", 1));
+      this.applyNodeEffects(root);
       drawNodeShape(this.ctx, root, rootSize.width, rootSize.height);
       this.ctx.restore();
     }
@@ -99,6 +101,7 @@ export class MotionCanvasRenderer {
     this.ctx.translate(origin.x, origin.y);
     this.applyNodeTransform(node, size);
     this.ctx.globalAlpha *= visibleOpacity(this.runtime.valueFor(node.id, "opacity", 1));
+    this.applyNodeEffects(node);
 
     drawNodeShape(this.ctx, node, size.width, size.height);
 
@@ -121,6 +124,20 @@ export class MotionCanvasRenderer {
     this.ctx.rotate(rotation);
     this.ctx.scale(scaleX, scaleY);
     this.ctx.translate(-size.width / 2, -size.height / 2);
+  }
+
+  private applyNodeEffects(node: MotionNode): void {
+    const blendMode = resolveBlendMode(node);
+    if (blendMode !== "normal") {
+      this.ctx.globalCompositeOperation = mapBlendMode(blendMode, node.id);
+    }
+
+    const layerBlur = resolveLayerBlur(node);
+    if (layerBlur > 0) {
+      // Canvas filter and shadow blur compound when both are present; Swift separates
+      // them more cleanly, but Phase 5 accepts this Canvas2D approximation.
+      applyLayerBlur(this.ctx, layerBlur);
+    }
   }
 }
 

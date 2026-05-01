@@ -1,5 +1,6 @@
-import type { MotionFill, MotionNode } from "@framezero/schema";
+import type { MotionFill, MotionNode, MotionShadow } from "@framezero/schema";
 import { canvasColor } from "./color";
+import { applyDropShadow } from "./effects";
 
 type LinearGradientFill = Extract<MotionFill, { type: "linearGradient" }>;
 type RadialGradientFill = Extract<MotionFill, { type: "radialGradient" }>;
@@ -69,7 +70,8 @@ export function applyFills(
   node: MotionNode,
   width: number,
   height: number,
-  pathFn: FillPath
+  pathFn: FillPath,
+  shadow?: MotionShadow
 ): void {
   if (node.fills.length === 0) {
     const fallback = styleString(node, "backgroundColor");
@@ -78,9 +80,7 @@ export function applyFills(
       return;
     }
 
-    ctx.fillStyle = fill;
-    pathFn(ctx);
-    ctx.fill();
+    drawFillWithShadow(ctx, pathFn, fill, shadow);
     return;
   }
 
@@ -88,11 +88,30 @@ export function applyFills(
     ctx.save();
     ctx.globalAlpha *= fill.opacity ?? 1;
     applyGradientTransform(ctx, "gradientTransform" in fill ? fill.gradientTransform : undefined, width, height);
-    ctx.fillStyle = fillStyle(ctx, fill, width, height);
+    drawFillWithShadow(ctx, pathFn, fillStyle(ctx, fill, width, height), shadow);
+    ctx.restore();
+  }
+}
+
+function drawFillWithShadow(
+  ctx: CanvasRenderingContext2D,
+  pathFn: FillPath,
+  fillStyle: string | CanvasGradient,
+  shadow: MotionShadow | undefined
+): void {
+  if (shadow !== undefined && shadow.inset !== true) {
+    ctx.save();
+    applyDropShadow(ctx, shadow);
+    ctx.fillStyle = fillStyle;
     pathFn(ctx);
     ctx.fill();
     ctx.restore();
+    return;
   }
+
+  ctx.fillStyle = fillStyle;
+  pathFn(ctx);
+  ctx.fill();
 }
 
 function addColorStops(

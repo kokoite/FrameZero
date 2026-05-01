@@ -1,5 +1,6 @@
 import type { MotionNode } from "@framezero/schema";
 import { canvasColor } from "./color";
+import { applyInnerShadow, resolveShadow } from "./effects";
 import { applyFills } from "./fills";
 import { pathAsymmetricRoundRect, mapFont, styleString } from "./layout";
 import { applyStroke } from "./stroke";
@@ -56,7 +57,11 @@ export function pathRoundRect(
 
 function drawContainerBackground(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
   const pathFn = roundedRectPath(node, width, height);
-  applyFills(ctx, node, width, height, pathFn);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
   applyStroke(ctx, pathFn, node.stroke);
 }
 
@@ -65,13 +70,21 @@ function fillCircle(ctx: CanvasRenderingContext2D, node: MotionNode, width: numb
     target.beginPath();
     target.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
   };
-  applyFills(ctx, node, width, height, pathFn);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
   applyStroke(ctx, pathFn, node.stroke);
 }
 
 function fillRoundedRectangle(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
   const pathFn = roundedRectPath(node, width, height);
-  applyFills(ctx, node, width, height, pathFn);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
   applyStroke(ctx, pathFn, node.stroke);
 }
 

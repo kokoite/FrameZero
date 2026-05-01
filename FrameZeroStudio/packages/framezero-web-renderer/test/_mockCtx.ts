@@ -16,6 +16,11 @@ export interface MockCanvas {
 interface CanvasState {
   globalAlpha: number;
   globalCompositeOperation: GlobalCompositeOperation;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  filter: string;
 }
 
 export function createMockCtx(): MockCanvas {
@@ -23,7 +28,12 @@ export function createMockCtx(): MockCanvas {
   const gradients: MockGradient[] = [];
   const state: CanvasState = {
     globalAlpha: 1,
-    globalCompositeOperation: "source-over"
+    globalCompositeOperation: "source-over",
+    shadowColor: "rgba(0, 0, 0, 0)",
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    filter: "none"
   };
   const stack: CanvasState[] = [];
 
@@ -51,6 +61,11 @@ export function createMockCtx(): MockCanvas {
       if (previous !== undefined) {
         state.globalAlpha = previous.globalAlpha;
         state.globalCompositeOperation = previous.globalCompositeOperation;
+        state.shadowColor = previous.shadowColor;
+        state.shadowBlur = previous.shadowBlur;
+        state.shadowOffsetX = previous.shadowOffsetX;
+        state.shadowOffsetY = previous.shadowOffsetY;
+        state.filter = previous.filter;
       }
       calls.push(["restore"]);
     },
@@ -64,12 +79,18 @@ export function createMockCtx(): MockCanvas {
     ellipse: (x: number, y: number, radiusX: number, radiusY: number, rotation: number, startAngle: number, endAngle: number) =>
       calls.push(["ellipse", x, y, radiusX, radiusY, rotation, startAngle, endAngle]),
     closePath: () => calls.push(["closePath"]),
+    rect: (x: number, y: number, width: number, height: number) => calls.push(["rect", x, y, width, height]),
     fill: () => calls.push(["fill"]),
     stroke: () => calls.push(["stroke"]),
     clip: () => calls.push(["clip"]),
     setLineDash: (dash: number[]) => calls.push(["setLineDash", [...dash]]),
     transform: (a: number, b: number, c: number, d: number, e: number, f: number) =>
       calls.push(["transform", a, b, c, d, e, f]),
+    setTransform: (a: number, b: number, c: number, d: number, e: number, f: number) =>
+      calls.push(["setTransform", a, b, c, d, e, f]),
+    translate: (x: number, y: number) => calls.push(["translate", x, y]),
+    rotate: (radians: number) => calls.push(["rotate", radians]),
+    scale: (x: number, y: number) => calls.push(["scale", x, y]),
     createLinearGradient: (x0: number, y0: number, x1: number, y1: number) => {
       calls.push(["createLinearGradient", x0, y0, x1, y1]);
       return createGradient("linear", [x0, y0, x1, y1]);
@@ -111,6 +132,41 @@ export function createMockCtx(): MockCanvas {
     set globalCompositeOperation(value: GlobalCompositeOperation) {
       state.globalCompositeOperation = value;
       calls.push(["globalCompositeOperation", value]);
+    },
+    get shadowColor() {
+      return state.shadowColor;
+    },
+    set shadowColor(value: string) {
+      state.shadowColor = value;
+      calls.push(["shadowColor", value]);
+    },
+    get shadowBlur() {
+      return state.shadowBlur;
+    },
+    set shadowBlur(value: number) {
+      state.shadowBlur = value;
+      calls.push(["shadowBlur", value]);
+    },
+    get shadowOffsetX() {
+      return state.shadowOffsetX;
+    },
+    set shadowOffsetX(value: number) {
+      state.shadowOffsetX = value;
+      calls.push(["shadowOffsetX", value]);
+    },
+    get shadowOffsetY() {
+      return state.shadowOffsetY;
+    },
+    set shadowOffsetY(value: number) {
+      state.shadowOffsetY = value;
+      calls.push(["shadowOffsetY", value]);
+    },
+    get filter() {
+      return state.filter;
+    },
+    set filter(value: string) {
+      state.filter = value;
+      calls.push(["filter", value]);
     },
     set font(value: string) {
       calls.push(["font", value]);

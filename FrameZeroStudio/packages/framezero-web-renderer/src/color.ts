@@ -34,3 +34,7 @@ export function canvasColor(hex: string | undefined, alpha = 1): string | undefi
 
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${Math.min(Math.max(alpha, 0), 1)})`;
 }
+
+export function rgbaWithOpacity(hex: string, opacity: number): string {
+  return canvasColor(hex, opacity) ?? "rgba(0, 0, 0, 0)";
+}
