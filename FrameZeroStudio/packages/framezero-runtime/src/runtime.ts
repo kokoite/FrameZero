@@ -1,5 +1,6 @@
 import type {
   MotionDocument,
+  MotionDragBinding,
   MotionReduceMotionPolicy,
   MotionRule,
   MotionSensitivityLevel,
@@ -39,6 +40,33 @@ interface PendingChannelTarget {
 
 const immediateMotion: MotionSpec = { type: "immediate" };
 
+const DRAG_DEFAULTS = {
+  minLaunchPull: 24,
+  chargeStretchX: 0.16,
+  chargeStretchY: -0.08,
+  snapOffsetSpringResponse: 0.28,
+  snapOffsetSpringDamping: 0.76,
+  snapScaleSpringResponse: 0.24,
+  snapScaleSpringDamping: 0.8
+} as const;
+
+export interface MotionDragSample {
+  translationX: number;
+  translationY: number;
+  predictedTranslationX: number;
+  predictedTranslationY: number;
+}
+
+interface ActiveSlingshotDrag {
+  nodeID: string;
+  binding: MotionDragBinding;
+  anchorX: number;
+  anchorY: number;
+  currentX: number;
+  currentY: number;
+  charge: number;
+}
+
 export class MotionRuntime {
   private readonly document: MotionDocument;
   private readonly channels = new Map<string, MotionChannel>();
@@ -50,6 +78,8 @@ export class MotionRuntime {
   private readonly documentPolicy: MotionReduceMotionPolicy | undefined;
   private readonly parentByID = new Map<string, string>();
   private readonly tapTriggerIDsByNodeID = new Map<string, string[]>();
+  private readonly dragBindingByNodeID = new Map<string, MotionDragBinding>();
+  private readonly activeSlingshotDrags = new Map<string, ActiveSlingshotDrag>();
 
   constructor(doc: MotionDocument, opts: MotionRuntimeOptions = {}) {
     this.document = doc;
@@ -73,6 +103,14 @@ export class MotionRuntime {
         const existing = this.tapTriggerIDsByNodeID.get(nodeID) ?? [];
         existing.push(trigger.id);
         this.tapTriggerIDsByNodeID.set(nodeID, existing);
+      }
+    }
+
+    // Build dragBindingByNodeID: every drag binding's selector resolves to nodes.
+    for (const binding of doc.dragBindings ?? []) {
+      const nodeIDs = resolveNodeIDs(binding.selector, doc);
+      for (const nodeID of nodeIDs) {
+        this.dragBindingByNodeID.set(nodeID, binding);
       }
     }
 
@@ -192,6 +230,60 @@ export class MotionRuntime {
     }
   }
 
+  hasDragBinding(nodeID: string): boolean {
+    return this.dragBindingFor(nodeID) !== undefined;
+  }
+
+  handleDragChanged(nodeID: string, sample: MotionDragSample): void {
+    const binding = this.dragBindingFor(nodeID);
+    if (binding === undefined || binding.type !== "slingshot") return;
+
+    const existing = this.activeSlingshotDrags.get(nodeID);
+    const anchor = existing
+      ? { x: existing.anchorX, y: existing.anchorY }
+      : this.resolveAnchor(nodeID);
+    const maxPull = Math.max(binding.maxPull, 1);
+    const dx = sample.translationX;
+    const dy = sample.translationY;
+    const distance = Math.hypot(dx, dy);
+    const scale = distance > maxPull ? maxPull / distance : 1;
+    const currentX = anchor.x + dx * scale;
+    const currentY = anchor.y + dy * scale;
+    const charge = Math.min(distance / maxPull, 1);
+
+    this.activeSlingshotDrags.set(nodeID, {
+      nodeID,
+      binding,
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      currentX,
+      currentY,
+      charge
+    });
+
+    this.forceSnapChannel(nodeID, "offset.x", currentX);
+    this.forceSnapChannel(nodeID, "offset.y", currentY);
+    if (binding.chargeScale !== undefined) {
+      this.forceSnapChannel(nodeID, "scale", 1 + (binding.chargeScale - 1) * charge);
+    }
+    const stretchX = readChargeFeedback(binding, "stretchX") ?? DRAG_DEFAULTS.chargeStretchX;
+    const stretchY = readChargeFeedback(binding, "stretchY") ?? DRAG_DEFAULTS.chargeStretchY;
+    this.forceSnapChannel(nodeID, "scale.x", 1 + stretchX * charge);
+    this.forceSnapChannel(nodeID, "scale.y", 1 + stretchY * charge);
+  }
+
+  handleDragEnded(nodeID: string, _sample: MotionDragSample): void {
+    const drag = this.activeSlingshotDrags.get(nodeID);
+    if (drag === undefined) return;
+
+    // Phase 7b ships SNAP-BACK ONLY. Projectile launch (when pull >= minLaunchPull)
+    // is Phase 7c — needs ActiveProjectile state + tick-loop integration with
+    // gravity / air resistance / collision / restitution / friction.
+    // For Phase 7b we always snap back so the drag interaction is observable.
+    this.snapNodeToAnchor(nodeID, drag.anchorX, drag.anchorY);
+    this.activeSlingshotDrags.delete(nodeID);
+  }
+
   tick(dt: number): boolean {
     const clampedDt = Math.min(Math.max(dt, 0), 0.032);
     let hasActiveChannels = false;
@@ -254,6 +346,75 @@ export class MotionRuntime {
 
   __getChannel(nodeID: string, property: string): MotionChannel | undefined {
     return this.channels.get(channelKey(nodeID, property));
+  }
+
+  private dragBindingFor(nodeID: string): MotionDragBinding | undefined {
+    let currentID: string | undefined = nodeID;
+    while (currentID !== undefined) {
+      const binding = this.dragBindingByNodeID.get(currentID);
+      if (binding !== undefined) return binding;
+      currentID = this.parentByID.get(currentID);
+    }
+    return undefined;
+  }
+
+  private resolveAnchor(nodeID: string): { x: number; y: number } {
+    return {
+      x: this.valueFor(nodeID, "offset.x", 0),
+      y: this.valueFor(nodeID, "offset.y", 0)
+    };
+  }
+
+  private forceSnapChannel(nodeID: string, property: string, value: number): void {
+    const keyID = channelKey(nodeID, property);
+    let channel = this.channels.get(keyID);
+    if (channel === undefined) {
+      channel = new MotionChannel({
+        current: value,
+        velocity: 0,
+        target: value,
+        motion: immediateMotion,
+        animationStart: value,
+        animationElapsed: 0
+      });
+      this.channels.set(keyID, channel);
+      return;
+    }
+    channel.current = value;
+    channel.velocity = 0;
+    channel.target = value;
+    channel.motion = immediateMotion;
+    channel.animationStart = value;
+    channel.animationElapsed = 0;
+  }
+
+  private snapNodeToAnchor(nodeID: string, anchorX: number, anchorY: number): void {
+    const offsetSpring: MotionSpec = {
+      type: "spring",
+      response: DRAG_DEFAULTS.snapOffsetSpringResponse,
+      dampingFraction: DRAG_DEFAULTS.snapOffsetSpringDamping
+    };
+    const scaleSpring: MotionSpec = {
+      type: "spring",
+      response: DRAG_DEFAULTS.snapScaleSpringResponse,
+      dampingFraction: DRAG_DEFAULTS.snapScaleSpringDamping
+    };
+    this.setChannelTargetForDrag(nodeID, "offset.x", anchorX, offsetSpring);
+    this.setChannelTargetForDrag(nodeID, "offset.y", anchorY, offsetSpring);
+    this.setChannelTargetForDrag(nodeID, "scale", 1, scaleSpring);
+    this.setChannelTargetForDrag(nodeID, "scale.x", 1, scaleSpring);
+    this.setChannelTargetForDrag(nodeID, "scale.y", 1, scaleSpring);
+  }
+
+  private setChannelTargetForDrag(nodeID: string, property: string, target: number, motion: MotionSpec): void {
+    const keyID = channelKey(nodeID, property);
+    const channel = this.channels.get(keyID);
+    if (channel === undefined) return;
+    const opts: MotionChannelTargetOptions = {
+      isMotionReduced: this.isMotionReduced
+    };
+    if (this.documentPolicy !== undefined) opts.documentPolicy = this.documentPolicy;
+    channel.setTarget(target, motion, opts);
   }
 
   private tapTriggers(nodeID: string): string[] {
@@ -383,4 +544,12 @@ function sameKey(lhs: MotionResolvedPropertyKey, rhs: MotionResolvedPropertyKey)
 
 function comparePropertyKeys(lhs: MotionResolvedPropertyKey, rhs: MotionResolvedPropertyKey): number {
   return lhs.nodeID.localeCompare(rhs.nodeID) || lhs.property.localeCompare(rhs.property);
+}
+
+function readChargeFeedback(binding: MotionDragBinding, key: string): number | undefined {
+  const feedback = binding.chargeFeedback;
+  if (feedback === undefined) return undefined;
+  const value = feedback[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return undefined;
 }
