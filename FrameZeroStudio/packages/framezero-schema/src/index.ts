@@ -450,9 +450,34 @@ export const documentResultPayloadSchema = z.discriminatedUnion("status", [
   })
 ]);
 
+export const helloPayloadSchema = z.object({
+  client: z.enum(["studio-web", "ios-simulator"]),
+  schemaVersions: z.array(z.literal(1)).min(1),
+  appVersion: z.string().min(1).optional(),
+  lastAppliedRevision: z.number().int().nonnegative().optional()
+});
+
+export const helloAckPayloadSchema = z.object({
+  studioVersion: z.string().min(1),
+  sessionName: z.string().min(1),
+  schemaVersion: z.literal(1),
+  schemaVersions: z.array(z.literal(1)).min(1),
+  currentRevision: z.number().int().nonnegative(),
+  heartbeatIntervalMs: z.number().positive()
+});
+
+export const errorPayloadSchema = z.object({
+  code: z.enum(["schemaVersion.unsupported", "envelope.invalid", "payload.invalid"]),
+  message: z.string().min(1),
+  detail: z.unknown().optional()
+});
+
 export type PreviewEnvelope = z.infer<typeof previewEnvelopeSchema>;
 export type DocumentUpdatePayload = z.infer<typeof documentUpdatePayloadSchema>;
 export type DocumentResultPayload = z.infer<typeof documentResultPayloadSchema>;
+export type HelloPayload = z.infer<typeof helloPayloadSchema>;
+export type HelloAckPayload = z.infer<typeof helloAckPayloadSchema>;
+export type ErrorPayload = z.infer<typeof errorPayloadSchema>;
 
 export function makePreviewEnvelope(
   type: PreviewEnvelope["type"],

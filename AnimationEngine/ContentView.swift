@@ -950,6 +950,7 @@ private final class PreviewSyncClient: ObservableObject {
     private var task: URLSessionWebSocketTask?
     private var reconnectTask: Task<Void, Never>?
     private var isConnecting = false
+    private var schemaMismatched = false
 
     var badgeText: String {
         if isConnected {
@@ -991,7 +992,7 @@ private final class PreviewSyncClient: ObservableObject {
             "client": "ios-simulator",
             "appVersion": "0.1.0",
             "engineVersion": "MotionEngineKit",
-            "supportedSchemaVersions": [1],
+            "schemaVersions": [1],
             "lastAppliedRevision": lastAppliedRevision
         ])
         receiveNext(task)
@@ -1042,7 +1043,16 @@ private final class PreviewSyncClient: ObservableObject {
 
         switch type {
         case "hello.ack":
-            status = "Studio connected"
+            if let payload = envelope["payload"] as? [String: Any],
+               let ackVersion = payload["schemaVersion"] as? Int,
+               ackVersion != 1 {
+                schemaMismatched = true
+                status = "Studio schema mismatch (v\(ackVersion))"
+                logger.error("preview schema mismatch ack=\(ackVersion, privacy: .public) expected=1")
+            } else {
+                schemaMismatched = false
+                status = "Studio connected"
+            }
         case "document.update":
             applyDocumentUpdate(envelope["payload"])
         case "playback.command":
@@ -1061,6 +1071,11 @@ private final class PreviewSyncClient: ObservableObject {
     }
 
     private func applyDocumentUpdate(_ payload: Any?) {
+        if schemaMismatched {
+            logger.warning("ignored document.update; schemaVersion handshake failed")
+            return
+        }
+
         guard let payload = payload as? [String: Any],
               let revision = payload["revision"] as? Int,
               let json = payload["json"]

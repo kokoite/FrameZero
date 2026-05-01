@@ -3,6 +3,9 @@ import http from "node:http";
 import { URL } from "node:url";
 import {
   documentUpdatePayloadSchema,
+  errorPayloadSchema,
+  helloAckPayloadSchema,
+  helloPayloadSchema,
   makePreviewEnvelope,
   parseMotionDocument,
   previewEnvelopeSchema,
@@ -109,7 +112,7 @@ wsServer.on("connection", (socket, request) => {
   socket.on("message", (raw) => {
     handleSocketMessage(client, raw.toString()).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
-      send(client, "error", { message });
+      send(client, "error", errorPayloadSchema.parse({ code: "envelope.invalid", message }));
     });
   });
 
@@ -131,12 +134,32 @@ async function handleSocketMessage(client: Client, raw: string) {
   const envelope = previewEnvelopeSchema.parse(JSON.parse(raw));
 
   if (envelope.type === "hello") {
-    send(client, "hello.ack", {
+    const helloParse = helloPayloadSchema.safeParse(envelope.payload);
+    if (!helloParse.success) {
+      send(client, "error", errorPayloadSchema.parse({
+        code: "payload.invalid",
+        message: `hello payload invalid: ${helloParse.error.issues[0]?.message ?? "unknown"}`
+      }));
+      client.socket.close();
+      return;
+    }
+    if (!helloParse.data.schemaVersions.includes(1)) {
+      send(client, "error", errorPayloadSchema.parse({
+        code: "schemaVersion.unsupported",
+        message: `Bridge supports schemaVersion 1; client offered: ${JSON.stringify(helloParse.data.schemaVersions)}`
+      }));
+      client.socket.close();
+      return;
+    }
+
+    send(client, "hello.ack", helloAckPayloadSchema.parse({
       studioVersion: "0.1.0",
       sessionName: "FrameZero Local",
+      schemaVersion: 1,
+      schemaVersions: [1],
       currentRevision: state.revision,
       heartbeatIntervalMs: 5000
-    });
+    }));
 
     if (state.latestUpdate !== null) {
       send(client, "document.update", state.latestUpdate);
