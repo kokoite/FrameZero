@@ -1,6 +1,8 @@
 import type { MotionNode } from "@framezero/schema";
 import { canvasColor } from "./color";
-import { mapFont, styleString } from "./layout";
+import { applyFills } from "./fills";
+import { pathAsymmetricRoundRect, mapFont, styleString } from "./layout";
+import { applyStroke } from "./stroke";
 
 const warnedUnsupportedNodes = new Set<string>();
 
@@ -53,29 +55,24 @@ export function pathRoundRect(
 }
 
 function drawContainerBackground(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
-  const fill = solidFillColor(node) ?? canvasColor(styleString(node, "backgroundColor"));
-  if (fill === undefined) {
-    return;
-  }
-
-  ctx.fillStyle = fill;
-  pathRoundRect(ctx, 0, 0, width, height, node.cornerRadius ?? styleNumber(node, "cornerRadius") ?? 0);
-  ctx.fill();
+  const pathFn = roundedRectPath(node, width, height);
+  applyFills(ctx, node, width, height, pathFn);
+  applyStroke(ctx, pathFn, node.stroke);
 }
 
 function fillCircle(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
-  const fill = solidFillColor(node) ?? canvasColor(styleString(node, "backgroundColor")) ?? "transparent";
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
-  ctx.fill();
+  const pathFn = (target: CanvasRenderingContext2D) => {
+    target.beginPath();
+    target.ellipse(width / 2, height / 2, width / 2, height / 2, 0, 0, 2 * Math.PI);
+  };
+  applyFills(ctx, node, width, height, pathFn);
+  applyStroke(ctx, pathFn, node.stroke);
 }
 
 function fillRoundedRectangle(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
-  const fill = solidFillColor(node) ?? canvasColor(styleString(node, "backgroundColor")) ?? "transparent";
-  ctx.fillStyle = fill;
-  pathRoundRect(ctx, 0, 0, width, height, node.cornerRadius ?? styleNumber(node, "cornerRadius") ?? 0);
-  ctx.fill();
+  const pathFn = roundedRectPath(node, width, height);
+  applyFills(ctx, node, width, height, pathFn);
+  applyStroke(ctx, pathFn, node.stroke);
 }
 
 function fillText(ctx: CanvasRenderingContext2D, node: MotionNode): void {
@@ -85,18 +82,17 @@ function fillText(ctx: CanvasRenderingContext2D, node: MotionNode): void {
   ctx.fillText(styleString(node, "text") ?? "", 0, 0);
 }
 
-function solidFillColor(node: MotionNode): string | undefined {
-  const fill = node.fills[0];
-  if (fill?.type !== "solid") {
-    return undefined;
-  }
-
-  return canvasColor(fill.color, fill.opacity ?? 1);
-}
-
 function styleNumber(node: MotionNode, key: string): number | undefined {
   const value = node.style[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function roundedRectPath(node: MotionNode, width: number, height: number): (ctx: CanvasRenderingContext2D) => void {
+  if (node.cornerRadii !== undefined) {
+    return (ctx) => pathAsymmetricRoundRect(ctx, 0, 0, width, height, node.cornerRadii!);
+  }
+
+  return (ctx) => pathRoundRect(ctx, 0, 0, width, height, node.cornerRadius ?? styleNumber(node, "cornerRadius") ?? 0);
 }
 
 function warnUnsupported(node: MotionNode): void {

@@ -118,6 +118,48 @@ export function mapFont(font: string | undefined): string {
   return font === "title" ? "bold 28px system-ui" : "17px system-ui";
 }
 
+export interface CornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
+export function pathAsymmetricRoundRect(
+  ctx: Pick<CanvasRenderingContext2D, "beginPath" | "moveTo" | "lineTo" | "arc" | "closePath">,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radii: CornerRadii
+): void {
+  const cap = Math.min(width, height) / 2;
+  const tl = Math.min(Math.max(radii.topLeft, 0), cap);
+  const tr = Math.min(Math.max(radii.topRight, 0), cap);
+  const br = Math.min(Math.max(radii.bottomRight, 0), cap);
+  const bl = Math.min(Math.max(radii.bottomLeft, 0), cap);
+
+  ctx.beginPath();
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + width - tr, y);
+  if (tr > 0) {
+    ctx.arc(x + width - tr, y + tr, tr, -Math.PI / 2, 0);
+  }
+  ctx.lineTo(x + width, y + height - br);
+  if (br > 0) {
+    ctx.arc(x + width - br, y + height - br, br, 0, Math.PI / 2);
+  }
+  ctx.lineTo(x + bl, y + height);
+  if (bl > 0) {
+    ctx.arc(x + bl, y + height - bl, bl, Math.PI / 2, Math.PI);
+  }
+  ctx.lineTo(x, y + tl);
+  if (tl > 0) {
+    ctx.arc(x + tl, y + tl, tl, Math.PI, 3 * Math.PI / 2);
+  }
+  ctx.closePath();
+}
+
 function fontSizeFor(font: string | undefined): number {
   return font === "title" ? 28 : 17;
 }
