@@ -3,7 +3,7 @@ import { canvasColor } from "./color";
 import { applyInnerShadow, resolveShadow } from "./effects";
 import { applyFills } from "./fills";
 import { pathAsymmetricRoundRect, mapFont, styleString } from "./layout";
-import { pathLine, pathPolygon, pathStar } from "./shapes";
+import { pathLine, pathPolygon, pathStar, pathSvg } from "./shapes";
 import { applyStroke } from "./stroke";
 
 const warnedUnsupportedNodes = new Set<string>();
@@ -33,8 +33,10 @@ export function drawNodeShape(ctx: CanvasRenderingContext2D, node: MotionNode, w
     case "line":
       strokeLine(ctx, node);
       return;
-    case "image":
     case "path":
+      fillPath(ctx, node, width, height);
+      return;
+    case "image":
       warnUnsupported(node);
       return;
   }
@@ -117,6 +119,24 @@ function fillStar(ctx: CanvasRenderingContext2D, node: MotionNode, width: number
   }
   const spec = node.star;
   const pathFn = (target: CanvasRenderingContext2D) => pathStar(target, spec, width, height);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
+  applyStroke(ctx, pathFn, node.stroke);
+}
+
+function fillPath(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
+  const data = styleString(node, "pathData");
+  if (!data) {
+    warnUnsupported(node);
+    return;
+  }
+  const viewBoxWidth = styleNumber(node, "viewBoxWidth");
+  const viewBoxHeight = styleNumber(node, "viewBoxHeight");
+  const pathFn = (target: CanvasRenderingContext2D) =>
+    pathSvg(target, { data, width, height, viewBoxWidth, viewBoxHeight });
   const shadow = resolveShadow(node);
   applyFills(ctx, node, width, height, pathFn, shadow);
   if (shadow?.inset === true) {

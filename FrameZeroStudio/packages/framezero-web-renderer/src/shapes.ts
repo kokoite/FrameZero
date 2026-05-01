@@ -7,6 +7,137 @@ type PathContext = Pick<
   "beginPath" | "moveTo" | "lineTo" | "arcTo" | "closePath"
 >;
 
+type SvgPathContext = Pick<
+  CanvasRenderingContext2D,
+  "beginPath" | "moveTo" | "lineTo" | "bezierCurveTo" | "quadraticCurveTo" | "closePath"
+>;
+
+export interface SvgPathOptions {
+  data: string;
+  width: number;
+  height: number;
+  viewBoxWidth?: number | undefined;
+  viewBoxHeight?: number | undefined;
+}
+
+export function pathSvg(ctx: SvgPathContext, opts: SvgPathOptions): void {
+  const tokens = tokenizeSvgPath(opts.data);
+  const vbW = Math.max(opts.viewBoxWidth ?? opts.width, 0.0001);
+  const vbH = Math.max(opts.viewBoxHeight ?? opts.height, 0.0001);
+  const sx = opts.width / vbW;
+  const sy = opts.height / vbH;
+
+  const point = (x: number, y: number) => ({ x: x * sx, y: y * sy });
+
+  let i = 0;
+  let command: string | undefined;
+
+  ctx.beginPath();
+
+  const readNumber = (): number | undefined => {
+    if (i >= tokens.length) return undefined;
+    const v = Number(tokens[i]);
+    if (Number.isNaN(v)) return undefined;
+    i += 1;
+    return v;
+  };
+
+  while (i < tokens.length) {
+    const token = tokens[i]!;
+    if (token.length === 1 && /[A-Za-z]/.test(token)) {
+      command = token;
+      i += 1;
+    }
+    if (!command) break;
+
+    switch (command) {
+      case "M":
+      case "m": {
+        const x = readNumber();
+        const y = readNumber();
+        if (x === undefined || y === undefined) return;
+        const p = point(x, y);
+        ctx.moveTo(p.x, p.y);
+        break;
+      }
+      case "L":
+      case "l": {
+        const x = readNumber();
+        const y = readNumber();
+        if (x === undefined || y === undefined) return;
+        const p = point(x, y);
+        ctx.lineTo(p.x, p.y);
+        break;
+      }
+      case "C":
+      case "c": {
+        const x1 = readNumber();
+        const y1 = readNumber();
+        const x2 = readNumber();
+        const y2 = readNumber();
+        const x = readNumber();
+        const y = readNumber();
+        if (
+          x1 === undefined || y1 === undefined ||
+          x2 === undefined || y2 === undefined ||
+          x === undefined || y === undefined
+        ) return;
+        const p1 = point(x1, y1);
+        const p2 = point(x2, y2);
+        const p = point(x, y);
+        ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p.x, p.y);
+        break;
+      }
+      case "Q":
+      case "q": {
+        const x1 = readNumber();
+        const y1 = readNumber();
+        const x = readNumber();
+        const y = readNumber();
+        if (x1 === undefined || y1 === undefined || x === undefined || y === undefined) return;
+        const p1 = point(x1, y1);
+        const p = point(x, y);
+        ctx.quadraticCurveTo(p1.x, p1.y, p.x, p.y);
+        break;
+      }
+      case "Z":
+      case "z":
+        ctx.closePath();
+        break;
+      default:
+        // Unsupported command — skip token (advance pointer in caller via the outer loop)
+        i += 1;
+        break;
+    }
+  }
+}
+
+function tokenizeSvgPath(source: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  const flush = () => {
+    if (current.length > 0) {
+      tokens.push(current);
+      current = "";
+    }
+  };
+  for (const ch of source) {
+    if (/[A-Za-z]/.test(ch)) {
+      flush();
+      tokens.push(ch);
+    } else if (ch === "," || /\s/.test(ch)) {
+      flush();
+    } else if (ch === "-" && current.length > 0 && current[current.length - 1] !== "e" && current[current.length - 1] !== "E") {
+      flush();
+      current += ch;
+    } else {
+      current += ch;
+    }
+  }
+  flush();
+  return tokens;
+}
+
 export function pathPolygon(
   ctx: PathContext,
   spec: MotionPolygonSpec,
