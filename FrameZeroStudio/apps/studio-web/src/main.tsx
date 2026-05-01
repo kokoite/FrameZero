@@ -1739,7 +1739,7 @@ function App() {
               id={`inspector-tab-${tab}`}
               role="tab"
               aria-selected={inspectorTab === tab}
-              aria-controls={`inspector-panel-${tab}`}
+              aria-controls={tab === "code" ? "inspector-panel-code" : `inspector-panel-${tab}-${selectedComponent ? "component" : "node"}`}
               className={inspectorTab === tab ? "active" : ""}
               onClick={() => setInspectorTab(tab)}
             >
@@ -1763,7 +1763,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && selectedComponent && inspectorTab === "properties" ? (
-        <section role="tabpanel" id="inspector-panel-properties" aria-labelledby="inspector-tab-properties">
+        <section role="tabpanel" id="inspector-panel-properties-component" aria-labelledby="inspector-tab-properties">
           <div className="section-heading">
             <h2>Main Component</h2>
             {selectedComponent ? <button type="button" className="danger" onClick={deleteSelectedComponent}>Delete Component</button> : null}
@@ -1831,7 +1831,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && selectedComponent && inspectorTab === "effects" ? (
-          <section role="tabpanel" id="inspector-panel-effects" aria-labelledby="inspector-tab-effects">
+          <section role="tabpanel" id="inspector-panel-effects-component" aria-labelledby="inspector-tab-effects">
             <div className="section-heading">
               <h2>Component Effects</h2>
             </div>
@@ -1852,7 +1852,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && !selectedComponent && inspectorTab === "properties" ? (
-        <section role="tabpanel" id="inspector-panel-properties" aria-labelledby="inspector-tab-properties">
+        <section role="tabpanel" id="inspector-panel-properties-node" aria-labelledby="inspector-tab-properties">
           <div className="section-heading">
             <h2>Inspector</h2>
             {selectedNode && selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
@@ -1917,7 +1917,7 @@ function App() {
         ) : null}
 
         {workspaceMode === "design" && !selectedComponent && selectedNode && inspectorTab === "effects" ? (
-          <section role="tabpanel" id="inspector-panel-effects" aria-labelledby="inspector-tab-effects">
+          <section role="tabpanel" id="inspector-panel-effects-node" aria-labelledby="inspector-tab-effects">
             <div className="section-heading">
               <h2>Layer Effects</h2>
               {selectedNode.id !== project.rootNodeId ? <button type="button" className="danger" onClick={deleteSelectedNode}>Delete</button> : null}
