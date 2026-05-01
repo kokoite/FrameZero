@@ -7,7 +7,7 @@ import type {
   MotionValue
 } from "@framezero/schema";
 import { MotionChannel, type MotionChannelTargetOptions } from "./channel";
-import { resolvePropertyKeys, type MotionResolvedPropertyKey } from "./selector";
+import { resolveNodeIDs, resolvePropertyKeys, type MotionResolvedPropertyKey } from "./selector";
 import { resolveNumericValue } from "./value";
 
 export interface MotionViewport {
@@ -48,12 +48,33 @@ export class MotionRuntime {
   private viewport: MotionViewport | undefined;
   private isMotionReduced: boolean;
   private readonly documentPolicy: MotionReduceMotionPolicy | undefined;
+  private readonly parentByID = new Map<string, string>();
+  private readonly tapTriggerIDsByNodeID = new Map<string, string[]>();
 
   constructor(doc: MotionDocument, opts: MotionRuntimeOptions = {}) {
     this.document = doc;
     this.viewport = opts.viewport;
     this.isMotionReduced = opts.isMotionReduced ?? false;
     this.documentPolicy = doc.reduceMotionPolicy;
+
+    // Build parentByID by walking each node's children.
+    for (const node of doc.nodes) {
+      for (const childID of node.children) {
+        this.parentByID.set(childID, node.id);
+      }
+    }
+
+    // Build tapTriggerIDsByNodeID: every tap trigger's selector resolves to nodes.
+    for (const trigger of doc.triggers) {
+      if (trigger.type !== "tap") continue;
+      if (!trigger.selector) continue;
+      const nodeIDs = resolveNodeIDs(trigger.selector, doc);
+      for (const nodeID of nodeIDs) {
+        const existing = this.tapTriggerIDsByNodeID.get(nodeID) ?? [];
+        existing.push(trigger.id);
+        this.tapTriggerIDsByNodeID.set(nodeID, existing);
+      }
+    }
 
     for (const node of doc.nodes) {
       for (const property of Object.keys(node.presentation).sort()) {
@@ -164,6 +185,13 @@ export class MotionRuntime {
     return this.currentStates.get(machineID);
   }
 
+  handleTap(nodeID: string): void {
+    const triggers = this.tapTriggers(nodeID);
+    for (const triggerID of triggers) {
+      this.fireTrigger(triggerID);
+    }
+  }
+
   tick(dt: number): boolean {
     const clampedDt = Math.min(Math.max(dt, 0), 0.032);
     let hasActiveChannels = false;
@@ -226,6 +254,35 @@ export class MotionRuntime {
 
   __getChannel(nodeID: string, property: string): MotionChannel | undefined {
     return this.channels.get(channelKey(nodeID, property));
+  }
+
+  private tapTriggers(nodeID: string): string[] {
+    let currentID: string | undefined = nodeID;
+    while (currentID !== undefined) {
+      const triggerIDs = this.tapTriggerIDsByNodeID.get(currentID);
+      if (triggerIDs !== undefined && triggerIDs.length > 0) {
+        return triggerIDs;
+      }
+      currentID = this.parentByID.get(currentID);
+    }
+    return [];
+  }
+
+  private fireTrigger(triggerID: string): void {
+    for (const machine of this.document.machines) {
+      const currentState = this.currentStates.get(machine.id);
+      if (currentState === undefined) continue;
+      const matches = machine.transitions.filter(
+        (transition) => transition.from === currentState && transition.trigger === triggerID
+      );
+      if (matches.length === 0) continue;
+      if (matches.length > 1) {
+        console.warn(`[MotionRuntime] Multiple transitions matched trigger '${triggerID}' from state '${currentState}'; skipping.`);
+        continue;
+      }
+      const transition = matches[0]!;
+      this.applyState(machine.id, transition.to, transition.id);
+    }
   }
 
   private machine(machineID: string): MotionMachine {
