@@ -5,6 +5,8 @@ export const nodeKinds = [
   "vstack",
   "hstack",
   "text",
+  "image",
+  "path",
   "circle",
   "roundedRectangle"
 ] as const;
@@ -51,6 +53,14 @@ export const fillColorStopSchema = z.object({
   position: finiteNumberSchema.min(0).max(1),
   opacity: finiteNumberSchema.min(0).max(1).optional()
 });
+export const gradientTransformSchema = z.tuple([
+  finiteNumberSchema,
+  finiteNumberSchema,
+  finiteNumberSchema,
+  finiteNumberSchema,
+  finiteNumberSchema,
+  finiteNumberSchema
+]);
 export const fillSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("solid"),
@@ -61,6 +71,7 @@ export const fillSchema = z.discriminatedUnion("type", [
     type: z.literal("linearGradient"),
     colors: z.array(fillColorStopSchema).min(2),
     angle: finiteNumberSchema.optional(),
+    gradientTransform: gradientTransformSchema.optional(),
     opacity: finiteNumberSchema.min(0).max(1).optional()
   }),
   z.object({
@@ -69,6 +80,7 @@ export const fillSchema = z.discriminatedUnion("type", [
     centerX: finiteNumberSchema.min(0).max(1).optional(),
     centerY: finiteNumberSchema.min(0).max(1).optional(),
     radius: positiveNumberSchema.optional(),
+    gradientTransform: gradientTransformSchema.optional(),
     opacity: finiteNumberSchema.min(0).max(1).optional()
   })
 ]);
@@ -88,22 +100,44 @@ export const motionValueSchema = z.union([
 
 export const motionValueRecordSchema = z.record(z.string(), motionValueSchema);
 
-export const motionNodeSchema = z.object({
-  id: z.string().min(1),
-  kind: nodeKindSchema,
-  roles: z.array(z.string().min(1)).default([]),
-  layout: motionValueRecordSchema.default({}),
-  style: motionValueRecordSchema.default({}),
-  fills: z.array(fillSchema).default([]),
-  presentation: motionValueRecordSchema.default({}),
-  children: z.array(z.string().min(1)).default([]),
-  presence: z
-    .object({
-      machine: z.string().min(1),
-      states: z.array(z.string().min(1))
-    })
-    .optional()
-});
+export const lockedAssetPolicy = "locked";
+
+function requiresLockedAssetPolicy(
+  kind: z.infer<typeof nodeKindSchema>,
+  style: z.infer<typeof motionValueRecordSchema>,
+  context: z.RefinementCtx
+) {
+  if (kind !== "image") return;
+
+  if (style.assetPolicy !== lockedAssetPolicy) {
+    context.addIssue({
+      code: "custom",
+      path: ["style", "assetPolicy"],
+      message: "Image nodes are only allowed when style.assetPolicy is 'locked'"
+    });
+  }
+}
+
+export const motionNodeSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: nodeKindSchema,
+    roles: z.array(z.string().min(1)).default([]),
+    layout: motionValueRecordSchema.default({}),
+    style: motionValueRecordSchema.default({}),
+    fills: z.array(fillSchema).default([]),
+    presentation: motionValueRecordSchema.default({}),
+    children: z.array(z.string().min(1)).default([]),
+    presence: z
+      .object({
+        machine: z.string().min(1),
+        states: z.array(z.string().min(1))
+      })
+      .optional()
+  })
+  .superRefine((node, context) => {
+    requiresLockedAssetPolicy(node.kind, node.style, context);
+  });
 
 export const nodeSelectorSchema = z
   .object({
@@ -175,6 +209,30 @@ const actionBaseSchema = z.object({
 
 export type MotionAction = z.infer<typeof actionBaseSchema> & Record<string, unknown>;
 
+const emittedVisualSpecBaseSchema = z.object({
+  kind: nodeKindSchema,
+  layout: motionValueRecordSchema.default({}),
+  style: motionValueRecordSchema.default({}),
+  fills: z.array(fillSchema).default([]),
+  from: motionValueRecordSchema.default({}),
+  to: motionValueRecordSchema.default({}),
+  motion: motionSpecSchema,
+  lifetime: positiveNumberSchema
+});
+
+const emittedVisualSpecSchema = emittedVisualSpecBaseSchema
+  .superRefine((spec, context) => {
+    requiresLockedAssetPolicy(spec.kind, spec.style, context);
+  });
+
+const spawnedVisualSpecSchema = emittedVisualSpecBaseSchema
+  .extend({
+    id: z.string().min(1)
+  })
+  .superRefine((spec, context) => {
+    requiresLockedAssetPolicy(spec.kind, spec.style, context);
+  });
+
 export const motionActionSchema: z.ZodType<MotionAction> = z.lazy(() =>
   z.discriminatedUnion("type", [
     z.object({
@@ -209,35 +267,14 @@ export const motionActionSchema: z.ZodType<MotionAction> = z.lazy(() =>
       duration: nonNegativeNumberSchema.optional(),
       angle: z.object({ min: finiteNumberSchema, max: finiteNumberSchema }).optional(),
       distance: z.object({ min: finiteNumberSchema, max: finiteNumberSchema }).optional(),
-      particle: z.object({
-        kind: nodeKindSchema,
-        layout: motionValueRecordSchema.default({}),
-        style: motionValueRecordSchema.default({}),
-        fills: z.array(fillSchema).default([]),
-        from: motionValueRecordSchema.default({}),
-        to: motionValueRecordSchema.default({}),
-        motion: motionSpecSchema,
-        lifetime: positiveNumberSchema
-      })
+      particle: emittedVisualSpecSchema
     }),
     z.object({
       type: z.literal("spawnComponents"),
       id: z.string().min(1),
       selector: nodeSelectorSchema.optional(),
       components: z
-        .array(
-          z.object({
-            id: z.string().min(1),
-            kind: nodeKindSchema,
-            layout: motionValueRecordSchema.default({}),
-            style: motionValueRecordSchema.default({}),
-            fills: z.array(fillSchema).default([]),
-            from: motionValueRecordSchema.default({}),
-            to: motionValueRecordSchema.default({}),
-            motion: motionSpecSchema,
-            lifetime: positiveNumberSchema
-          })
-        )
+        .array(spawnedVisualSpecSchema)
         .min(1)
         .max(32)
     })
