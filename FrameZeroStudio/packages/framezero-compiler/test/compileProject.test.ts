@@ -84,6 +84,25 @@ describe("compileStudioProject", () => {
     expect(result.json).not.toContain('"stroke"');
   });
 
+  it("forwards typed corner radii on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.cornerRadii = { topLeft: 12, topRight: 0, bottomLeft: 4, bottomRight: 24 };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.cornerRadii).toEqual({ topLeft: 12, topRight: 0, bottomLeft: 4, bottomRight: 24 });
+    expect(result.json).toContain('"cornerRadii": {');
+  });
+
+  it("omits typed corner radii when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("cornerRadii");
+    expect(result.json).not.toContain('"cornerRadii"');
+  });
+
   it("strips Studio-only component instance metadata from runtime nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.componentId = "heroCard";

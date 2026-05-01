@@ -70,6 +70,7 @@ struct MotionNode: Identifiable, Decodable {
     let style: [String: MotionValue]
     let fills: [MotionFill]
     let stroke: MotionStrokeSpec?
+    let cornerRadii: MotionCornerRadii?
     let presentation: [String: MotionValue]
     let children: [NodeID]
     let presence: MotionPresence?
@@ -82,6 +83,7 @@ struct MotionNode: Identifiable, Decodable {
         case style
         case fills
         case stroke
+        case cornerRadii
         case presentation
         case children
         case presence
@@ -96,6 +98,7 @@ struct MotionNode: Identifiable, Decodable {
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         stroke = try container.decodeIfPresent(MotionStrokeSpec.self, forKey: .stroke)
+        cornerRadii = try container.decodeIfPresent(MotionCornerRadii.self, forKey: .cornerRadii)
         presentation = try container.decodeIfPresent([String: MotionValue].self, forKey: .presentation) ?? [:]
         children = try container.decodeIfPresent([NodeID].self, forKey: .children) ?? []
         presence = try container.decodeIfPresent(MotionPresence.self, forKey: .presence)
@@ -163,6 +166,25 @@ struct MotionStrokeSpec: Decodable, Equatable {
         } else {
             dash = nil
         }
+    }
+}
+
+struct MotionCornerRadii: Decodable, Equatable {
+    let topLeft: Double
+    let topRight: Double
+    let bottomLeft: Double
+    let bottomRight: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case topLeft, topRight, bottomLeft, bottomRight
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        topLeft = try c.decodeFiniteNonNegativeDouble(forKey: .topLeft)
+        topRight = try c.decodeFiniteNonNegativeDouble(forKey: .topRight)
+        bottomLeft = try c.decodeFiniteNonNegativeDouble(forKey: .bottomLeft)
+        bottomRight = try c.decodeFiniteNonNegativeDouble(forKey: .bottomRight)
     }
 }
 

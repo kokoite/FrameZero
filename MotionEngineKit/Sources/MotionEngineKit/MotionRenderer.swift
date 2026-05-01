@@ -208,7 +208,7 @@ public struct MotionRuntimeView: View {
                 drawsBackground: false
             ))
         case .roundedRectangle:
-            let shape = RoundedRectangle(cornerRadius: engine.styleNumber(for: node, "cornerRadius") ?? 12)
+            let shape = roundedShape(for: node, fallback: engine.styleNumber(for: node, "cornerRadius") ?? 12)
             return AnyView(applyCommonModifiers(
                 MotionFilledShape(
                     shape: shape,
@@ -226,12 +226,36 @@ public struct MotionRuntimeView: View {
         }
     }
 
-    private func shapeBackground(for node: MotionNode, cornerRadius: Double) -> MotionFilledShape<RoundedRectangle> {
+    private func shapeBackground(for node: MotionNode, cornerRadius: Double) -> MotionFilledShape<AnyShape> {
         MotionFilledShape(
-            shape: RoundedRectangle(cornerRadius: cornerRadius),
+            shape: roundedShape(for: node, fallback: cornerRadius),
             fills: node.fills,
             fallbackStyle: node.style
         )
+    }
+
+    private func roundedShape(for node: MotionNode, fallback: Double) -> AnyShape {
+        if let r = node.cornerRadii {
+            // Figma stores physical left/right radii; RTL remapping is out of scope.
+            if #available(iOS 16.4, *) {
+                return AnyShape(UnevenRoundedRectangle(cornerRadii: .init(
+                    topLeading: CGFloat(r.topLeft),
+                    bottomLeading: CGFloat(r.bottomLeft),
+                    bottomTrailing: CGFloat(r.bottomRight),
+                    topTrailing: CGFloat(r.topRight)
+                )))
+            } else {
+                return AnyShape(AsymmetricRoundedRectangle(
+                    topLeft: CGFloat(r.topLeft),
+                    topRight: CGFloat(r.topRight),
+                    bottomLeft: CGFloat(r.bottomLeft),
+                    bottomRight: CGFloat(r.bottomRight)
+                ))
+            }
+        }
+
+        let uniform = node.style["cornerRadius"]?.number ?? fallback
+        return AnyShape(RoundedRectangle(cornerRadius: CGFloat(uniform)))
     }
 
     private func effectInsets(for node: MotionNode) -> EdgeInsets {
@@ -757,6 +781,51 @@ private struct MotionProceduralGradientView: View {
         case .relative:
             return value
         }
+    }
+}
+
+struct AsymmetricRoundedRectangle: Shape {
+    let topLeft: CGFloat
+    let topRight: CGFloat
+    let bottomLeft: CGFloat
+    let bottomRight: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let maxX = rect.width / 2
+        let maxY = rect.height / 2
+        let tl = min(topLeft, min(maxX, maxY))
+        let tr = min(topRight, min(maxX, maxY))
+        let bl = min(bottomLeft, min(maxX, maxY))
+        let br = min(bottomRight, min(maxX, maxY))
+
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX + tl, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
+        if tr > 0 {
+            p.addArc(center: CGPoint(x: rect.maxX - tr, y: rect.minY + tr),
+                     radius: tr,
+                     startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+        }
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
+        if br > 0 {
+            p.addArc(center: CGPoint(x: rect.maxX - br, y: rect.maxY - br),
+                     radius: br,
+                     startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+        }
+        p.addLine(to: CGPoint(x: rect.minX + bl, y: rect.maxY))
+        if bl > 0 {
+            p.addArc(center: CGPoint(x: rect.minX + bl, y: rect.maxY - bl),
+                     radius: bl,
+                     startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        }
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tl))
+        if tl > 0 {
+            p.addArc(center: CGPoint(x: rect.minX + tl, y: rect.minY + tl),
+                     radius: tl,
+                     startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        }
+        p.closeSubpath()
+        return p
     }
 }
 

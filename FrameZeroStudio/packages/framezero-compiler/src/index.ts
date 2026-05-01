@@ -5,6 +5,7 @@ import {
   type MotionDocument,
   type MotionDragBinding,
   type MotionFill,
+  type MotionCornerRadii,
   type MotionStroke,
   type MotionForce,
   type MotionNode,
@@ -46,6 +47,7 @@ export type StudioNode = {
   style: Record<string, MotionValue>;
   fills?: MotionFill[];
   stroke?: MotionStroke;
+  cornerRadii?: MotionCornerRadii;
   presentation: Record<string, MotionValue>;
   componentId?: string;
   locked?: boolean;
@@ -178,6 +180,7 @@ function compileNodes(project: StudioProject): MotionNode[] {
       children: [...node.childIds]
     };
     if (node.stroke !== undefined) out.stroke = node.stroke;
+    if (node.cornerRadii !== undefined) out.cornerRadii = node.cornerRadii;
     return out;
   });
 }

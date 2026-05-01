@@ -104,6 +104,14 @@ export const strokeSpecSchema = z.object({
 });
 export type MotionStroke = z.infer<typeof strokeSpecSchema>;
 
+export const cornerRadiiSchema = z.object({
+  topLeft: nonNegativeNumberSchema,
+  topRight: nonNegativeNumberSchema,
+  bottomLeft: nonNegativeNumberSchema,
+  bottomRight: nonNegativeNumberSchema
+}).strict();
+export type MotionCornerRadii = z.infer<typeof cornerRadiiSchema>;
+
 export const metricValueSchema = z.object({
   metric: metricSchema,
   multiplier: finiteNumberSchema.optional(),
@@ -146,6 +154,7 @@ export const motionNodeSchema = z
     style: motionValueRecordSchema.default({}),
     fills: z.array(fillSchema).default([]),
     stroke: strokeSpecSchema.optional(),
+    cornerRadii: cornerRadiiSchema.optional(),
     presentation: motionValueRecordSchema.default({}),
     children: z.array(z.string().min(1)).default([]),
     presence: z
@@ -253,6 +262,7 @@ const emittedVisualSpecBaseSchema = z.object({
   style: motionValueRecordSchema.default({}),
   fills: z.array(fillSchema).default([]),
   stroke: strokeSpecSchema.optional(),
+  cornerRadii: cornerRadiiSchema.optional(),
   from: motionValueRecordSchema.default({}),
   to: motionValueRecordSchema.default({}),
   motion: motionSpecSchema,

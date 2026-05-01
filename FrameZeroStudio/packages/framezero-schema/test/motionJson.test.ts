@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument, strokeSpecSchema } from "../src/index";
+import { cornerRadiiSchema, documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -603,6 +603,84 @@ describe("strokeSpecSchema", () => {
     expect(node).not.toHaveProperty("stroke");
     expect(node.style.strokeWidth).toBe(2);
     expect(node.style.strokeColor).toBe("#FF0000");
+  });
+});
+
+describe("cornerRadiiSchema", () => {
+  it("accepts full corner radii", () => {
+    const radii = cornerRadiiSchema.parse({
+      topLeft: 12,
+      topRight: 0,
+      bottomLeft: 4,
+      bottomRight: 24
+    });
+
+    expect(radii).toEqual({
+      topLeft: 12,
+      topRight: 0,
+      bottomLeft: 4,
+      bottomRight: 24
+    });
+  });
+
+  it("rejects negative values on any corner", () => {
+    for (const field of ["topLeft", "topRight", "bottomLeft", "bottomRight"] as const) {
+      expect(cornerRadiiSchema.safeParse({
+        topLeft: 12,
+        topRight: 0,
+        bottomLeft: 4,
+        bottomRight: 24,
+        [field]: -1
+      }).success).toBe(false);
+    }
+  });
+
+  it("rejects non-finite values", () => {
+    expect(cornerRadiiSchema.safeParse({
+      topLeft: Number.NaN,
+      topRight: 0,
+      bottomLeft: 4,
+      bottomRight: 24
+    }).success).toBe(false);
+  });
+
+  it("rejects missing fields", () => {
+    expect(cornerRadiiSchema.safeParse({
+      topLeft: 12,
+      topRight: 0,
+      bottomLeft: 4
+    }).success).toBe(false);
+  });
+
+  it("rejects extra keys", () => {
+    expect(cornerRadiiSchema.safeParse({
+      topLeft: 12,
+      topRight: 0,
+      bottomLeft: 4,
+      bottomRight: 24,
+      extra: 8
+    }).success).toBe(false);
+  });
+
+  it("accepts motion nodes with corner radii embedded", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      cornerRadii: { topLeft: 12, topRight: 0, bottomLeft: 4, bottomRight: 24 }
+    });
+
+    expect(node.cornerRadii).toEqual({ topLeft: 12, topRight: 0, bottomLeft: 4, bottomRight: 24 });
+  });
+
+  it("keeps untyped corner radius style keys parseable", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      style: { cornerRadius: 8 }
+    });
+
+    expect(node).not.toHaveProperty("cornerRadii");
+    expect(node.style.cornerRadius).toBe(8);
   });
 });
 
