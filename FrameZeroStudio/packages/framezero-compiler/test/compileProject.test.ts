@@ -65,6 +65,25 @@ describe("compileStudioProject", () => {
     expect(card?.fills).toEqual(project.nodes.card.fills);
   });
 
+  it("forwards typed stroke on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.stroke = { color: "#000000", width: 1 };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.stroke).toMatchObject({ color: "#000000", width: 1 });
+    expect(result.json).toContain('"stroke": {');
+  });
+
+  it("omits typed stroke when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("stroke");
+    expect(result.json).not.toContain('"stroke"');
+  });
+
   it("strips Studio-only component instance metadata from runtime nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.componentId = "heroCard";

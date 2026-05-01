@@ -87,6 +87,23 @@ export const fillSchema = z.discriminatedUnion("type", [
   })
 ]);
 
+export const strokeAlignmentSchema = z.enum(["inside", "outside", "center"]);
+export const strokeCapSchema = z.enum(["butt", "round", "square"]);
+export const strokeJoinSchema = z.enum(["miter", "round", "bevel"]);
+
+export const strokeSpecSchema = z.object({
+  color: hexColorSchema,
+  width: nonNegativeNumberSchema,
+  alignment: strokeAlignmentSchema.default("center"),
+  dash: z.array(nonNegativeNumberSchema).min(1)
+    .refine(d => d.some(v => v > 0), "dash must include at least one positive value")
+    .optional(),
+  cap: strokeCapSchema.default("butt"),
+  join: strokeJoinSchema.default("miter"),
+  miterLimit: positiveNumberSchema.optional()
+});
+export type MotionStroke = z.infer<typeof strokeSpecSchema>;
+
 export const metricValueSchema = z.object({
   metric: metricSchema,
   multiplier: finiteNumberSchema.optional(),
@@ -128,6 +145,7 @@ export const motionNodeSchema = z
     layout: motionValueRecordSchema.default({}),
     style: motionValueRecordSchema.default({}),
     fills: z.array(fillSchema).default([]),
+    stroke: strokeSpecSchema.optional(),
     presentation: motionValueRecordSchema.default({}),
     children: z.array(z.string().min(1)).default([]),
     presence: z
@@ -234,6 +252,7 @@ const emittedVisualSpecBaseSchema = z.object({
   layout: motionValueRecordSchema.default({}),
   style: motionValueRecordSchema.default({}),
   fills: z.array(fillSchema).default([]),
+  stroke: strokeSpecSchema.optional(),
   from: motionValueRecordSchema.default({}),
   to: motionValueRecordSchema.default({}),
   motion: motionSpecSchema,

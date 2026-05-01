@@ -1,5 +1,15 @@
 import SwiftUI
 
+struct ResolvedStroke: Equatable {
+    let color: String
+    let width: Double
+    let alignment: MotionStrokeAlignment
+    let dash: [Double]
+    let cap: CGLineCap
+    let join: CGLineJoin
+    let miterLimit: Double
+}
+
 public struct MotionRuntimeView: View {
     let engine: MotionEngine
     let frame: Int
@@ -162,36 +172,54 @@ public struct MotionRuntimeView: View {
                 drawsBackground: false
             ))
         case .path:
+            let shape = MotionVectorPath(
+                data: engine.styleString(for: node, "pathData") ?? "",
+                viewBoxWidth: engine.styleNumber(for: node, "viewBoxWidth"),
+                viewBoxHeight: engine.styleNumber(for: node, "viewBoxHeight")
+            )
             return AnyView(applyCommonModifiers(
                 MotionFilledShape(
-                    shape: MotionVectorPath(
-                        data: engine.styleString(for: node, "pathData") ?? "",
-                        viewBoxWidth: engine.styleNumber(for: node, "viewBoxWidth"),
-                        viewBoxHeight: engine.styleNumber(for: node, "viewBoxHeight")
-                    ),
+                    shape: shape,
                     fills: node.fills,
                     fallbackStyle: node.style
-                ),
+                )
+                .overlay {
+                    if let stroke = resolveStroke(node: node) {
+                        strokeOverlay(shape, spec: stroke)
+                    }
+                },
                 node: node,
                 drawsBackground: false
             ))
         case .circle:
+            let shape = Ellipse()
             return AnyView(applyCommonModifiers(
                 MotionFilledShape(
-                    shape: Ellipse(),
+                    shape: shape,
                     fills: node.fills,
                     fallbackStyle: node.style
-                ),
+                )
+                .overlay {
+                    if let stroke = resolveStroke(node: node) {
+                        strokeOverlay(shape, spec: stroke)
+                    }
+                },
                 node: node,
                 drawsBackground: false
             ))
         case .roundedRectangle:
+            let shape = RoundedRectangle(cornerRadius: engine.styleNumber(for: node, "cornerRadius") ?? 12)
             return AnyView(applyCommonModifiers(
                 MotionFilledShape(
-                    shape: RoundedRectangle(cornerRadius: engine.styleNumber(for: node, "cornerRadius") ?? 12),
+                    shape: shape,
                     fills: node.fills,
                     fallbackStyle: node.style
-                ),
+                )
+                .overlay {
+                    if let stroke = resolveStroke(node: node) {
+                        strokeOverlay(shape, spec: stroke)
+                    }
+                },
                 node: node,
                 drawsBackground: false
             ))
@@ -239,8 +267,6 @@ public struct MotionRuntimeView: View {
         let blur = hasFigmaFilterBox
             ? 0
             : max(engine.styleNumber(for: node, "blur") ?? (engine.styleNumber(for: node, "figmaBlur") ?? 0) / 2, 0)
-        let strokeWidth = max(engine.styleNumber(for: node, "strokeWidth") ?? 0, 0)
-        let strokeColor = color(for: engine.styleString(for: node, "strokeColor")) ?? .clear
         let shadowBlur = max(engine.styleNumber(for: node, "shadowBlur") ?? 0, 0)
         let shadowX = engine.styleNumber(for: node, "shadowX") ?? 0
         let shadowY = engine.styleNumber(for: node, "shadowY") ?? 0
@@ -264,16 +290,6 @@ public struct MotionRuntimeView: View {
             .background {
                 if drawsBackground, hasBackground {
                     shapeBackground(for: node, cornerRadius: cornerRadius)
-                }
-            }
-            .overlay {
-                if strokeWidth > 0 {
-                    if node.kind == .circle {
-                        Ellipse().stroke(strokeColor, lineWidth: strokeWidth)
-                    } else {
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .stroke(strokeColor, lineWidth: strokeWidth)
-                    }
                 }
             }
             .shadow(color: shadowColor, radius: shadowBlur, x: shadowX, y: shadowY)
@@ -319,6 +335,84 @@ public struct MotionRuntimeView: View {
         }
 
         return transformed
+    }
+
+    func resolveStroke(node: MotionNode) -> ResolvedStroke? {
+        if let stroke = node.stroke {
+            return ResolvedStroke(
+                color: stroke.color,
+                width: stroke.width,
+                alignment: stroke.alignment,
+                dash: stroke.dash ?? [],
+                cap: cgCap(stroke.cap),
+                join: cgJoin(stroke.join),
+                miterLimit: stroke.miterLimit ?? 10
+            )
+        }
+
+        guard let width = node.style["strokeWidth"]?.number,
+              width > 0,
+              let color = node.style["strokeColor"]?.string
+        else {
+            return nil
+        }
+
+        return ResolvedStroke(
+            color: color,
+            width: width,
+            alignment: .center,
+            dash: [],
+            cap: .butt,
+            join: .miter,
+            miterLimit: 10
+        )
+    }
+
+    @ViewBuilder
+    private func strokeOverlay<S: Shape>(_ shape: S, spec: ResolvedStroke) -> some View {
+        let style = StrokeStyle(
+            lineWidth: spec.alignment == .center ? spec.width : spec.width * 2,
+            lineCap: spec.cap,
+            lineJoin: spec.join,
+            miterLimit: spec.miterLimit,
+            dash: spec.dash.map { CGFloat($0) }
+        )
+
+        switch spec.alignment {
+        case .center:
+            shape.stroke(color(for: spec.color) ?? .clear, style: style)
+        case .inside:
+            shape.stroke(color(for: spec.color) ?? .clear, style: style)
+                .clipShape(shape)
+        case .outside:
+            ZStack {
+                shape.stroke(color(for: spec.color) ?? .clear, style: style)
+                shape.fill(Color.black).blendMode(.destinationOut)
+            }
+            .compositingGroup()
+        }
+    }
+
+    private func cgCap(_ cap: MotionStrokeCap) -> CGLineCap {
+        switch cap {
+        case .butt:
+            return .butt
+        case .round:
+            return .round
+        case .square:
+            return .square
+        }
+    }
+
+    private func cgJoin(_ join: MotionStrokeJoin) -> CGLineJoin {
+        switch join {
+        case .miter:
+            return .miter
+        case .round:
+            return .round
+        case .bevel:
+            return .bevel
+        }
     }
 
     private func dragGesture(for nodeID: NodeID) -> some Gesture {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { documentUpdatePayloadSchema, makePreviewEnvelope, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument } from "../src/index";
+import { documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -519,6 +519,90 @@ describe("preview protocol schemas", () => {
     });
 
     expect(payload.json.root).toBe("screen");
+  });
+});
+
+describe("strokeSpecSchema", () => {
+  it("accepts full typed stroke", () => {
+    const stroke = strokeSpecSchema.parse({
+      color: "#FF0000",
+      width: 2,
+      alignment: "inside",
+      dash: [4, 2],
+      cap: "round",
+      join: "round",
+      miterLimit: 8
+    });
+
+    expect(stroke).toEqual({
+      color: "#FF0000",
+      width: 2,
+      alignment: "inside",
+      dash: [4, 2],
+      cap: "round",
+      join: "round",
+      miterLimit: 8
+    });
+  });
+
+  it("accepts required fields and applies defaults", () => {
+    const stroke = strokeSpecSchema.parse({ color: "#FF0000", width: 2 });
+
+    expect(stroke).toEqual({
+      color: "#FF0000",
+      width: 2,
+      alignment: "center",
+      cap: "butt",
+      join: "miter"
+    });
+  });
+
+  it("rejects negative width", () => {
+    expect(strokeSpecSchema.safeParse({ color: "#FF0000", width: -1 }).success).toBe(false);
+  });
+
+  it("rejects empty dash", () => {
+    expect(strokeSpecSchema.safeParse({ color: "#FF0000", width: 2, dash: [] }).success).toBe(false);
+  });
+
+  it("rejects all-zero dash", () => {
+    expect(strokeSpecSchema.safeParse({ color: "#FF0000", width: 2, dash: [0, 0] }).success).toBe(false);
+  });
+
+  it("rejects unknown alignment", () => {
+    expect(strokeSpecSchema.safeParse({ color: "#FF0000", width: 2, alignment: "outer" }).success).toBe(false);
+  });
+
+  it("rejects non-hex color", () => {
+    expect(strokeSpecSchema.safeParse({ color: "red", width: 2 }).success).toBe(false);
+  });
+
+  it("accepts motion nodes with typed stroke embedded", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      stroke: { color: "#000000", width: 1 }
+    });
+
+    expect(node.stroke).toEqual({
+      color: "#000000",
+      width: 1,
+      alignment: "center",
+      cap: "butt",
+      join: "miter"
+    });
+  });
+
+  it("keeps untyped stroke style keys parseable", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      style: { strokeWidth: 2, strokeColor: "#FF0000" }
+    });
+
+    expect(node).not.toHaveProperty("stroke");
+    expect(node.style.strokeWidth).toBe(2);
+    expect(node.style.strokeColor).toBe("#FF0000");
   });
 });
 

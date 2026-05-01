@@ -5,6 +5,7 @@ import {
   type MotionDocument,
   type MotionDragBinding,
   type MotionFill,
+  type MotionStroke,
   type MotionForce,
   type MotionNode,
   type MotionReduceMotionPolicy,
@@ -44,6 +45,7 @@ export type StudioNode = {
   layout: Record<string, MotionValue>;
   style: Record<string, MotionValue>;
   fills?: MotionFill[];
+  stroke?: MotionStroke;
   presentation: Record<string, MotionValue>;
   componentId?: string;
   locked?: boolean;
@@ -165,7 +167,7 @@ export function stableStringify(value: unknown): string {
 function compileNodes(project: StudioProject): MotionNode[] {
   return orderedNodeIds(project).map((nodeId) => {
     const node = requireNode(project, nodeId);
-    return {
+    const out: MotionNode = {
       id: node.id,
       kind: node.kind,
       roles: [...node.roles].sort(),
@@ -175,6 +177,8 @@ function compileNodes(project: StudioProject): MotionNode[] {
       presentation: sortRecord(node.presentation),
       children: [...node.childIds]
     };
+    if (node.stroke !== undefined) out.stroke = node.stroke;
+    return out;
   });
 }
 

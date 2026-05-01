@@ -69,6 +69,7 @@ struct MotionNode: Identifiable, Decodable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let stroke: MotionStrokeSpec?
     let presentation: [String: MotionValue]
     let children: [NodeID]
     let presence: MotionPresence?
@@ -80,6 +81,7 @@ struct MotionNode: Identifiable, Decodable {
         case layout
         case style
         case fills
+        case stroke
         case presentation
         case children
         case presence
@@ -93,9 +95,74 @@ struct MotionNode: Identifiable, Decodable {
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        stroke = try container.decodeIfPresent(MotionStrokeSpec.self, forKey: .stroke)
         presentation = try container.decodeIfPresent([String: MotionValue].self, forKey: .presentation) ?? [:]
         children = try container.decodeIfPresent([NodeID].self, forKey: .children) ?? []
         presence = try container.decodeIfPresent(MotionPresence.self, forKey: .presence)
+    }
+}
+
+enum MotionStrokeAlignment: String, Decodable, Equatable {
+    case inside
+    case outside
+    case center
+}
+
+enum MotionStrokeCap: String, Decodable, Equatable {
+    case butt
+    case round
+    case square
+}
+
+enum MotionStrokeJoin: String, Decodable, Equatable {
+    case miter
+    case round
+    case bevel
+}
+
+struct MotionStrokeSpec: Decodable, Equatable {
+    let color: String
+    let width: Double
+    let alignment: MotionStrokeAlignment
+    let dash: [Double]?
+    let cap: MotionStrokeCap
+    let join: MotionStrokeJoin
+    let miterLimit: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case color
+        case width
+        case alignment
+        case dash
+        case cap
+        case join
+        case miterLimit
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decode(String.self, forKey: .color)
+        width = try container.decodeFiniteNonNegativeDouble(forKey: .width)
+        alignment = try container.decodeIfPresent(MotionStrokeAlignment.self, forKey: .alignment) ?? .center
+        cap = try container.decodeIfPresent(MotionStrokeCap.self, forKey: .cap) ?? .butt
+        join = try container.decodeIfPresent(MotionStrokeJoin.self, forKey: .join) ?? .miter
+        miterLimit = try container.decodeFinitePositiveDoubleIfPresent(forKey: .miterLimit)
+
+        if let decodedDash = try container.decodeIfPresent([Double].self, forKey: .dash) {
+            guard !decodedDash.isEmpty,
+                  decodedDash.allSatisfy({ $0.isFinite && $0 >= 0 }),
+                  decodedDash.contains(where: { $0 > 0 })
+            else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .dash,
+                    in: container,
+                    debugDescription: "dash must be non-empty, finite, non-negative, with at least one positive entry"
+                )
+            }
+            dash = decodedDash
+        } else {
+            dash = nil
+        }
     }
 }
 
