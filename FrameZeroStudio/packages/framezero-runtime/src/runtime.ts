@@ -140,7 +140,13 @@ export class MotionRuntime {
       }
     }
 
+    // Seed currentStates to each machine's initial state, then dump initial
+    // assignments through applyState (snap=true). Mirrors Swift's install
+    // path at MotionEngine.swift:1283 where currentStates is seeded with
+    // machine.initial before any tick.
     for (const machine of doc.machines) {
+      this.currentStates.set(machine.id, machine.initial);
+      this.stateElapsedByMachine.set(machine.id, 0);
       this.applyState(machine.id, machine.initial, undefined, { snap: true });
     }
   }
@@ -151,9 +157,13 @@ export class MotionRuntime {
     const transition = transitionID === undefined ? undefined : this.transition(machine, transitionID);
     const snap = opts.snap ?? false;
 
-    this.currentStates.set(machineID, stateID);
-    this.stateElapsedByMachine.set(machineID, 0);
-    this.idleElapsed = 0;
+    // applyState is the dumb channel-target-applier — it does NOT mutate
+    // currentStates / stateElapsed / idleElapsed. Only the trigger-dispatch
+    // path (dispatchTrigger) and the constructor's initial-state seed do.
+    // Mirrors Swift `applyState` (MotionEngine.swift:2074-2162) which also
+    // never touches currentStates. The Phase 2 trace test relies on this:
+    // `applyStateForTesting` calls applyState directly without setting
+    // currentStates, so subsequent after-triggers don't match.
     this.pendingTargets = this.pendingTargets.filter((pending) => pending.machineID !== machineID);
 
     for (const assignment of state.values) {
@@ -230,7 +240,7 @@ export class MotionRuntime {
   handleTap(nodeID: string): void {
     const triggers = this.tapTriggers(nodeID);
     for (const triggerID of triggers) {
-      this.fireTrigger(triggerID);
+      this.dispatchTrigger(triggerID);
     }
   }
 
@@ -322,11 +332,10 @@ export class MotionRuntime {
     }
 
     // Track per-machine state-elapsed + global idle-elapsed for future auto/
-    // after trigger dispatch. NOT YET DISPATCHED — Phase 7c-triggers needs a
-    // proper Researcher pre-pass: the naive `fire-when-elapsed >= delay`
-    // implementation diverged from the recorded Swift trace empirically; the
-    // exact gating semantics need to be re-confirmed against the live Swift
-    // engine before TS can ship it. Counters are harmless to maintain meanwhile.
+    // after trigger dispatch (Phase 7c-triggers). Mirrors Swift tick at
+    // MotionEngine.swift:2890-2904 — counters advance, then after-transitions
+    // fire (regardless of channel activity), then automatic transitions fire
+    // ONLY when channels are settled.
     for (const machine of this.document.machines) {
       const prev = this.stateElapsedByMachine.get(machine.id) ?? 0;
       this.stateElapsedByMachine.set(machine.id, prev + clampedDt);
@@ -335,6 +344,13 @@ export class MotionRuntime {
       this.idleElapsed = 0;
     } else {
       this.idleElapsed += clampedDt;
+    }
+
+    if (this.fireAfterTransitions()) {
+      return true;
+    }
+    if (!hasActiveChannels && this.fireAutomaticTransitionsIfIdle()) {
+      return true;
     }
 
     return hasActiveChannels || this.pendingTargets.length > 0;
@@ -449,8 +465,12 @@ export class MotionRuntime {
     return [];
   }
 
-  private fireTrigger(triggerID: string): void {
-    for (const machine of this.document.machines) {
+  private dispatchTrigger(triggerID: string): void {
+    // Sorted machine iteration matches Swift `fire(triggerID:)` (which
+    // iterates machinesByID.values; in TS we sort by id ascending for
+    // deterministic order). Mirrors MotionEngine.swift:1998-2025.
+    const machines = [...this.document.machines].sort((a, b) => a.id.localeCompare(b.id));
+    for (const machine of machines) {
       const currentState = this.currentStates.get(machine.id);
       if (currentState === undefined) continue;
       const matches = machine.transitions.filter(
@@ -462,8 +482,54 @@ export class MotionRuntime {
         continue;
       }
       const transition = matches[0]!;
+      // currentStates mutation lives ONLY here — applyState below is the
+      // dumb channel-target-applier and never touches it.
+      this.currentStates.set(machine.id, transition.to);
       this.applyState(machine.id, transition.to, transition.id);
+      this.stateElapsedByMachine.set(machine.id, 0);
+      this.idleElapsed = 0;
     }
+  }
+
+  private fireAfterTransitions(): boolean {
+    const afterTriggerIDs = new Set(
+      this.document.triggers.filter((t) => t.type === "after").map((t) => t.id)
+    );
+    if (afterTriggerIDs.size === 0) return false;
+    let didFire = false;
+    const machines = [...this.document.machines].sort((a, b) => a.id.localeCompare(b.id));
+    for (const machine of machines) {
+      const currentState = this.currentStates.get(machine.id);
+      if (currentState === undefined) continue;
+      const elapsed = this.stateElapsedByMachine.get(machine.id) ?? 0;
+      const transition = machine.transitions.find(
+        (t) => t.from === currentState && afterTriggerIDs.has(t.trigger) && elapsed >= (t.delay ?? 0)
+      );
+      if (transition === undefined) continue;
+      this.dispatchTrigger(transition.trigger);
+      didFire = true;
+    }
+    return didFire;
+  }
+
+  private fireAutomaticTransitionsIfIdle(): boolean {
+    const automaticTriggerIDs = new Set(
+      this.document.triggers.filter((t) => t.type === "automatic").map((t) => t.id)
+    );
+    if (automaticTriggerIDs.size === 0) return false;
+    let didFire = false;
+    const machines = [...this.document.machines].sort((a, b) => a.id.localeCompare(b.id));
+    for (const machine of machines) {
+      const currentState = this.currentStates.get(machine.id);
+      if (currentState === undefined) continue;
+      const transition = machine.transitions.find(
+        (t) => t.from === currentState && automaticTriggerIDs.has(t.trigger) && this.idleElapsed >= (t.delay ?? 0)
+      );
+      if (transition === undefined) continue;
+      this.dispatchTrigger(transition.trigger);
+      didFire = true;
+    }
+    return didFire;
   }
 
   private machine(machineID: string): MotionMachine {
