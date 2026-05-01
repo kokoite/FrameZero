@@ -188,6 +188,9 @@ public struct MotionRuntimeView: View {
                     if let stroke = resolveStroke(node: node) {
                         strokeOverlay(shape, spec: stroke)
                     }
+                }
+                .overlay {
+                    innerShadowOverlayIfNeeded(node: node, shape: shape)
                 },
                 node: node,
                 drawsBackground: false
@@ -205,6 +208,9 @@ public struct MotionRuntimeView: View {
                     if let stroke = resolveStroke(node: node) {
                         strokeOverlay(shape, spec: stroke)
                     }
+                }
+                .overlay {
+                    innerShadowOverlayIfNeeded(node: node, shape: shape)
                 },
                 node: node,
                 drawsBackground: false
@@ -222,6 +228,9 @@ public struct MotionRuntimeView: View {
                     if let stroke = resolveStroke(node: node) {
                         strokeOverlay(shape, spec: stroke)
                     }
+                }
+                .overlay {
+                    innerShadowOverlayIfNeeded(node: node, shape: shape)
                 },
                 node: node,
                 drawsBackground: false
@@ -243,6 +252,9 @@ public struct MotionRuntimeView: View {
                     if let stroke = resolveStroke(node: node) {
                         strokeOverlay(shape, spec: stroke)
                     }
+                }
+                .overlay {
+                    innerShadowOverlayIfNeeded(node: node, shape: shape)
                 },
                 node: node,
                 drawsBackground: false
@@ -265,6 +277,9 @@ public struct MotionRuntimeView: View {
                     if let stroke = resolveStroke(node: node) {
                         strokeOverlay(shape, spec: stroke)
                     }
+                }
+                .overlay {
+                    innerShadowOverlayIfNeeded(node: node, shape: shape)
                 },
                 node: node,
                 drawsBackground: false
@@ -328,6 +343,35 @@ public struct MotionRuntimeView: View {
         return AnyShape(RoundedRectangle(cornerRadius: CGFloat(uniform)))
     }
 
+    @ViewBuilder
+    private func innerShadowOverlayIfNeeded<S: Shape>(node: MotionNode, shape: S) -> some View {
+        if let shadow = resolveShadow(node: node), shadow.inset == true {
+            innerShadowOverlay(shape: shape, spec: shadow)
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private func innerShadowOverlay<S: Shape>(shape: S, spec: MotionShadowSpec) -> some View {
+        let shadowColor = (color(for: spec.color) ?? .clear).opacity(spec.opacity)
+
+        if #available(iOS 17, macOS 14, *) {
+            shape
+                .fill(Color.clear.shadow(.inner(color: shadowColor, radius: spec.blur, x: spec.x, y: spec.y)))
+        } else {
+            shape
+                .fill(shadowColor)
+                .mask {
+                    shape
+                        .stroke(Color.black, lineWidth: max(spec.blur, 1))
+                        .blur(radius: spec.blur)
+                        .offset(x: spec.x, y: spec.y)
+                        .blendMode(.destinationOut)
+                    shape
+                }
+        }
+    }
+
     private func effectInsets(for node: MotionNode) -> EdgeInsets {
         let all = max(engine.styleNumber(for: node, "effectBounds") ?? 0, 0)
         return EdgeInsets(
@@ -377,6 +421,7 @@ public struct MotionRuntimeView: View {
             ? 0
             : max(resolveLayerBlur(node: node) ?? 0, 0)
         let shadow = resolveShadow(node: node)
+        let appliesDropShadow = shadow?.inset != true
         let shadowBlur = shadow?.blur ?? max(engine.styleNumber(for: node, "shadowBlur") ?? 0, 0)
         let shadowX = shadow?.x ?? engine.styleNumber(for: node, "shadowX") ?? 0
         let shadowY = shadow?.y ?? engine.styleNumber(for: node, "shadowY") ?? 0
@@ -402,7 +447,12 @@ public struct MotionRuntimeView: View {
                     shapeBackground(for: node, cornerRadius: cornerRadius)
                 }
             }
-            .shadow(color: shadowColor, radius: shadowBlur, x: shadowX, y: shadowY)
+            .shadow(
+                color: appliesDropShadow ? shadowColor : .clear,
+                radius: appliesDropShadow ? shadowBlur : 0,
+                x: appliesDropShadow ? shadowX : 0,
+                y: appliesDropShadow ? shadowY : 0
+            )
             .modifier(ConditionalClip(enabled: clipsContent))
 
         let effectBox = effectBounds.hasInset

@@ -288,4 +288,33 @@ final class MotionShadowBlurTests: XCTestCase {
         XCTAssertEqual(engine.components().first?.shadow?.color, "#654321")
         XCTAssertEqual(engine.components().first?.layerBlur, 10)
     }
+
+    func testDecodeShadowWithInsetTrue() throws {
+        let node = try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233","inset":true},"##)
+
+        XCTAssertEqual(node.shadow?.inset, true)
+    }
+
+    func testDecodeShadowWithInsetFalse() throws {
+        let node = try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233","inset":false},"##)
+
+        XCTAssertEqual(node.shadow?.inset, false)
+    }
+
+    func testDecodeShadowWithoutInsetIsNil() throws {
+        let node = try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233"},"##)
+
+        XCTAssertNil(node.shadow?.inset)
+    }
+
+    func testRejectsNonBooleanInset() {
+        XCTAssertThrowsError(try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233","inset":"true"},"##))
+    }
+
+    func testEqualityDistinguishesInset() throws {
+        let outer = try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233","inset":false},"##)
+        let inner = try decodeNode(##""shadow":{"x":4,"y":8,"blur":12,"opacity":0.35,"color":"#112233","inset":true},"##)
+
+        XCTAssertNotEqual(outer.shadow, inner.shadow)
+    }
 }

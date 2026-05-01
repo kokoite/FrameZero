@@ -729,6 +729,22 @@ describe("shadowSpecSchema and layerBlur", () => {
     expect(shadowSpecSchema.parse(shadow)).toEqual(shadow);
   });
 
+  it("accepts inset true", () => {
+    expect(shadowSpecSchema.parse({ ...shadow, inset: true })).toEqual({ ...shadow, inset: true });
+  });
+
+  it("accepts inset false", () => {
+    expect(shadowSpecSchema.parse({ ...shadow, inset: false })).toEqual({ ...shadow, inset: false });
+  });
+
+  it("rejects string inset", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, inset: "true" }).success).toBe(false);
+  });
+
+  it("rejects numeric inset", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, inset: 1 }).success).toBe(false);
+  });
+
   it("rejects negative blur", () => {
     expect(shadowSpecSchema.safeParse({ ...shadow, blur: -1 }).success).toBe(false);
   });

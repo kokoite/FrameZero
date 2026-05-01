@@ -133,6 +133,17 @@ describe("compileStudioProject", () => {
     expect(result.json).toContain('"shadow": {');
   });
 
+  it("forwards inner shadow inset on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.shadow = { x: 4, y: 8, blur: 12, opacity: 0.35, color: "#112233", inset: true };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.shadow?.inset).toBe(true);
+    expect(result.json).toContain('"inset": true');
+  });
+
   it("forwards layerBlur on compiled nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.layerBlur = 6;

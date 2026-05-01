@@ -127,7 +127,8 @@ export const shadowSpecSchema = z.object({
   y: finiteNumberSchema,
   blur: nonNegativeNumberSchema,
   opacity: finiteNumberSchema.min(0).max(1),
-  color: hexColorSchema
+  color: hexColorSchema,
+  inset: z.boolean().optional()
 }).strict();
 export type MotionShadow = z.infer<typeof shadowSpecSchema>;
 

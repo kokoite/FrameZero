@@ -237,9 +237,10 @@ struct MotionShadowSpec: Decodable, Equatable {
     let blur: Double
     let opacity: Double
     let color: String
+    let inset: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case x, y, blur, opacity, color
+        case x, y, blur, opacity, color, inset
     }
 
     init(from decoder: Decoder) throws {
@@ -248,6 +249,7 @@ struct MotionShadowSpec: Decodable, Equatable {
         y = try c.decodeFiniteDouble(forKey: .y)
         blur = try c.decodeFiniteNonNegativeDouble(forKey: .blur)
         opacity = try c.decodeUnitInterval(forKey: .opacity)
+        inset = try c.decodeIfPresent(Bool.self, forKey: .inset)
 
         let hex = try c.decode(String.self, forKey: .color)
         guard MotionRenderStyle.isValidHexColor(hex) else {
