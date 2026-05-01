@@ -346,6 +346,16 @@ public final class MotionEngine {
         hapticPerformer = performer
     }
 
+    func applyStateForTesting(machineID: MachineID, stateID: StateID, transitionID: String? = nil, snap: Bool = false) throws {
+        let transition = try transitionID.map { id in
+            guard let transition = machinesByID[machineID]?.transitions.first(where: { $0.id == id }) else {
+                throw MotionRuntimeError.validation("Transition '\(id)' does not exist")
+            }
+            return transition
+        }
+        try applyState(machineID: machineID, stateID: stateID, transition: transition, snap: snap)
+    }
+
     public static func phase1Demo() -> MotionEngine {
         let engine = MotionEngine()
         engine.prepareEditablePhase1Document(overwrite: false)
