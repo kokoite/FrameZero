@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"BIPARTITE ORCHESTRATION CONTRACT IS LOCKED. Before spawning any agent or taking non-trivial action, verify against Documentation/Contracts/ORCHESTRATION.md and the relevant Documentation/Contracts/roles/*.md. Bipartite parity (Claude<->Codex on every parent-child edge), whipper cadence (silence > 4 min escalates), pool ceiling (5 PMs + 5 Leads), Codex never runs git, and the orchestrator goal of always-available user response are NON-NEGOTIABLE. If you cannot follow the contract, stop and tell the user — do not silently drift.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}
