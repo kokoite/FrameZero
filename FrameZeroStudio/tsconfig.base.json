@@ -16,7 +16,9 @@
     "paths": {
       "@framezero/schema": ["packages/framezero-schema/src/index.ts"],
       "@framezero/compiler": ["packages/framezero-compiler/src/index.ts"],
-      "@framezero/fixtures": ["packages/framezero-fixtures/src/index.ts"]
+      "@framezero/runtime": ["packages/framezero-runtime/src/index.ts"],
+      "@framezero/fixtures": ["packages/framezero-fixtures/src/index.ts"],
+      "@framezero/web-renderer": ["packages/framezero-web-renderer/src/index.ts"]
     }
   }
 }

@@ -1,0 +1,19 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 716 469" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Planet 1" filter="url(#filter0_f_0_6)">
+<ellipse cx="358" cy="234.5" rx="258" ry="134.5" fill="url(#paint0_radial_0_6)"/>
+</g>
+<defs>
+<filter id="filter0_f_0_6" x="0" y="0" width="716" height="469" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feGaussianBlur stdDeviation="50" result="effect1_foregroundBlur_0_6"/>
+</filter>
+<radialGradient id="paint0_radial_0_6" cx="0" cy="0" r="1" gradientTransform="matrix(0 308.67 -591.426 -2.6306 345.55 86.0211)" gradientUnits="userSpaceOnUse">
+<stop offset="0.132113" stop-color="#F0960E"/>
+<stop offset="0.169755" stop-color="#FC790D"/>
+<stop offset="0.273108" stop-color="#8320DA"/>
+<stop offset="0.38" stop-color="#D195F9"/>
+<stop offset="0.45" stop-color="white"/>
+</radialGradient>
+</defs>
+</svg>

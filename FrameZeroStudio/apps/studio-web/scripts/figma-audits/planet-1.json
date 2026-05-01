@@ -1,0 +1,126 @@
+{
+  "version": 3,
+  "figma": {
+    "fileKey": "EHcVczZvvuhLeqOn2zXQgG",
+    "nodeId": "250:475",
+    "name": "Planet 1",
+    "sourceTool": "figma.use_figma",
+    "rawNode": {
+      "type": "ELLIPSE",
+      "x": -70,
+      "y": 141.0000762939453,
+      "width": 516,
+      "height": 269,
+      "absoluteBoundingBox": {
+        "x": 292,
+        "y": 465.00006103515625,
+        "width": 516,
+        "height": 269
+      },
+      "absoluteRenderBounds": {
+        "x": 362,
+        "y": 365.00006103515625,
+        "width": 375,
+        "height": 206.99993896484375
+      },
+      "opacity": 1,
+      "blendMode": "PASS_THROUGH",
+      "effects": [
+        {
+          "type": "LAYER_BLUR",
+          "visible": true,
+          "radius": 100,
+          "blurType": "NORMAL"
+        }
+      ],
+      "fills": [
+        {
+          "type": "GRADIENT_RADIAL",
+          "visible": true,
+          "opacity": 1,
+          "blendMode": "NORMAL",
+          "gradientTransform": [
+            [-0.003717739600688219, 0.43574050068855286, 0.524412989616394],
+            [-0.436233788728714, 1.0644263248593688e-14, 0.70759117603302]
+          ],
+          "gradientStops": [
+            { "color": "#F0960E", "position": 0.13211318850517273, "variable": "yellow-500" },
+            { "color": "#FC790D", "position": 0.16975507140159607, "variable": "orange-500" },
+            { "color": "#8320DA", "position": 0.2731081545352936, "variable": "purple-600" },
+            { "color": "#D195F9", "position": 0.3799999952316284, "variable": "purple-300" },
+            { "color": "#FFFFFF", "position": 0.44999998807907104, "variable": "neutral-100" }
+          ]
+        }
+      ]
+    },
+    "screenshot": {
+      "path": "artifacts/figma-planet-1-reference.png",
+      "width": 375,
+      "height": 207
+    }
+  },
+  "workflow": "Documentation/FIGMA_NATIVE_LAYER_WORKFLOW.md",
+  "classification": {
+    "kind": "native-layer-target",
+    "assetFallbackAllowed": false,
+    "primitiveDataAvailable": true,
+    "reason": "Raw Figma Plugin API exposes ellipse geometry, radial gradient stops, gradient transform, opacity, blend mode, and layer blur."
+  },
+  "frameZero": {
+    "nodeId": "planetOne",
+    "kind": "circle",
+    "layout": {
+      "width": 375,
+      "height": 207
+    },
+    "fills": [
+      {
+        "type": "radialGradient",
+        "gradientTransform": [0, 308.67, -591.426, -2.6306, 345.55, 86.0211],
+        "gradientTransformProvenance": "Figma SVG-export pixel transform for the full filter box. The implementation renders the transform natively; it does not render the SVG asset.",
+        "colors": [
+          { "color": "#F0960E", "position": 0.13211318850517273, "opacity": 1 },
+          { "color": "#FC790D", "position": 0.16975507140159607, "opacity": 1 },
+          { "color": "#8320DA", "position": 0.2731081545352936, "opacity": 1 },
+          { "color": "#D195F9", "position": 0.3799999952316284, "opacity": 1 },
+          { "color": "#FFFFFF", "position": 0.44999998807907104, "opacity": 1 }
+        ],
+        "opacity": 1
+      }
+    ],
+    "style": {
+      "figmaBlur": 100,
+      "shapeBounds.top": 100,
+      "shapeBounds.right": 100,
+      "shapeBounds.bottom": 100,
+      "shapeBounds.left": 100,
+      "figmaFilterBox.width": 716,
+      "figmaFilterBox.height": 469,
+      "figmaFilterBox.cropX": 170,
+      "figmaFilterBox.cropY": 0
+    },
+    "presentation": {
+      "offset.x": 0,
+      "offset.y": 20.5,
+      "opacity": 1
+    }
+  },
+  "support": {
+    "nativeApproximation": false,
+    "assetBacked": false,
+    "supported": [
+      "Figma ellipse geometry",
+      "Figma radial gradient stops",
+      "Figma gradient transform recorded as source data",
+      "FrameZero pixel-space gradient transform conversion",
+      "Figma layer blur radius",
+      "Figma absolute render bounds",
+      "Figma filter-box render and crop model",
+      "opacity"
+    ],
+    "verificationRequired": [
+      "isolated Planet 1 render compared against the Figma isolated layer screenshot",
+      "no SVG, PNG, image, or composite asset use in the Planet 1 implementation"
+    ]
+  }
+}
