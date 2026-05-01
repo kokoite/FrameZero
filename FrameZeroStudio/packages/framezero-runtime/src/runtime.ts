@@ -80,6 +80,8 @@ export class MotionRuntime {
   private readonly tapTriggerIDsByNodeID = new Map<string, string[]>();
   private readonly dragBindingByNodeID = new Map<string, MotionDragBinding>();
   private readonly activeSlingshotDrags = new Map<string, ActiveSlingshotDrag>();
+  private readonly stateElapsedByMachine = new Map<string, number>();
+  private idleElapsed = 0;
 
   constructor(doc: MotionDocument, opts: MotionRuntimeOptions = {}) {
     this.document = doc;
@@ -150,6 +152,8 @@ export class MotionRuntime {
     const snap = opts.snap ?? false;
 
     this.currentStates.set(machineID, stateID);
+    this.stateElapsedByMachine.set(machineID, 0);
+    this.idleElapsed = 0;
     this.pendingTargets = this.pendingTargets.filter((pending) => pending.machineID !== machineID);
 
     for (const assignment of state.values) {
@@ -315,6 +319,22 @@ export class MotionRuntime {
       if (!channel.isSettled) {
         hasActiveChannels = true;
       }
+    }
+
+    // Track per-machine state-elapsed + global idle-elapsed for future auto/
+    // after trigger dispatch. NOT YET DISPATCHED — Phase 7c-triggers needs a
+    // proper Researcher pre-pass: the naive `fire-when-elapsed >= delay`
+    // implementation diverged from the recorded Swift trace empirically; the
+    // exact gating semantics need to be re-confirmed against the live Swift
+    // engine before TS can ship it. Counters are harmless to maintain meanwhile.
+    for (const machine of this.document.machines) {
+      const prev = this.stateElapsedByMachine.get(machine.id) ?? 0;
+      this.stateElapsedByMachine.set(machine.id, prev + clampedDt);
+    }
+    if (hasActiveChannels) {
+      this.idleElapsed = 0;
+    } else {
+      this.idleElapsed += clampedDt;
     }
 
     return hasActiveChannels || this.pendingTargets.length > 0;
