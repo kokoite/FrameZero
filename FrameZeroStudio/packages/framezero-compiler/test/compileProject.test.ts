@@ -103,6 +103,25 @@ describe("compileStudioProject", () => {
     expect(result.json).not.toContain('"cornerRadii"');
   });
 
+  it("forwards typed corner radius on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.cornerRadius = 8;
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.cornerRadius).toBe(8);
+    expect(result.json).toContain('"cornerRadius": 8');
+  });
+
+  it("omits typed corner radius when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("cornerRadius");
+    expect(card?.style.cornerRadius).toBe(18);
+  });
+
   it("forwards typed shadow on compiled nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.shadow = { x: 4, y: 8, blur: 12, opacity: 0.35, color: "#112233" };

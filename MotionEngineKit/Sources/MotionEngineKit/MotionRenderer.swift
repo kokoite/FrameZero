@@ -210,7 +210,7 @@ public struct MotionRuntimeView: View {
                 drawsBackground: false
             ))
         case .roundedRectangle:
-            let shape = roundedShape(for: node, fallback: engine.styleNumber(for: node, "cornerRadius") ?? 12)
+            let shape = roundedShape(for: node, fallback: node.cornerRadius ?? engine.styleNumber(for: node, "cornerRadius") ?? 12)
             return AnyView(applyCommonModifiers(
                 MotionFilledShape(
                     shape: shape,
@@ -324,7 +324,7 @@ public struct MotionRuntimeView: View {
             }
         }
 
-        let uniform = node.style["cornerRadius"]?.number ?? fallback
+        let uniform = node.cornerRadius ?? node.style["cornerRadius"]?.number ?? fallback
         return AnyShape(RoundedRectangle(cornerRadius: CGFloat(uniform)))
     }
 
@@ -370,7 +370,7 @@ public struct MotionRuntimeView: View {
         let scaleY = scale * stretchY
         let opacity = MotionRenderStyle.visibleOpacity(engine.number(for: node.id, property: "opacity", default: 1))
         let padding = engine.layoutNumber(for: node, "padding") ?? 0
-        let cornerRadius = engine.styleNumber(for: node, "cornerRadius") ?? 0
+        let cornerRadius = node.cornerRadius ?? engine.styleNumber(for: node, "cornerRadius") ?? 0
         let hasFigmaFilterBox = (engine.styleNumber(for: node, "figmaFilterBox.width") ?? 0) > 0
             && (engine.styleNumber(for: node, "figmaFilterBox.height") ?? 0) > 0
         let blur = hasFigmaFilterBox

@@ -71,6 +71,7 @@ struct MotionNode: Identifiable, Decodable {
     let fills: [MotionFill]
     let stroke: MotionStrokeSpec?
     let cornerRadii: MotionCornerRadii?
+    let cornerRadius: Double?
     let shadow: MotionShadowSpec?
     let blendMode: MotionBlendMode?
     let layerBlur: Double?
@@ -90,6 +91,7 @@ struct MotionNode: Identifiable, Decodable {
         case fills
         case stroke
         case cornerRadii
+        case cornerRadius
         case shadow
         case blendMode
         case layerBlur
@@ -111,6 +113,7 @@ struct MotionNode: Identifiable, Decodable {
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         stroke = try container.decodeIfPresent(MotionStrokeSpec.self, forKey: .stroke)
         cornerRadii = try container.decodeIfPresent(MotionCornerRadii.self, forKey: .cornerRadii)
+        cornerRadius = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .cornerRadius)
         shadow = try container.decodeIfPresent(MotionShadowSpec.self, forKey: .shadow)
         blendMode = try container.decodeIfPresent(MotionBlendMode.self, forKey: .blendMode)
         layerBlur = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .layerBlur)

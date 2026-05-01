@@ -53,6 +53,7 @@ export type StudioNode = {
   fills?: MotionFill[];
   stroke?: MotionStroke;
   cornerRadii?: MotionCornerRadii;
+  cornerRadius?: number;
   shadow?: MotionShadow;
   layerBlur?: number;
   blendMode?: MotionBlendMode;
@@ -192,6 +193,7 @@ function compileNodes(project: StudioProject): MotionNode[] {
     };
     if (node.stroke !== undefined) out.stroke = node.stroke;
     if (node.cornerRadii !== undefined) out.cornerRadii = node.cornerRadii;
+    if (node.cornerRadius !== undefined) out.cornerRadius = node.cornerRadius;
     if (node.shadow !== undefined) out.shadow = node.shadow;
     if (node.layerBlur !== undefined) out.layerBlur = node.layerBlur;
     if (node.blendMode !== undefined) out.blendMode = node.blendMode;

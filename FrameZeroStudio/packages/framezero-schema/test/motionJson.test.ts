@@ -672,6 +672,32 @@ describe("cornerRadiiSchema", () => {
     expect(node.cornerRadii).toEqual({ topLeft: 12, topRight: 0, bottomLeft: 4, bottomRight: 24 });
   });
 
+  it("accepts motion nodes with typed corner radius", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      cornerRadius: 8
+    });
+
+    expect(node.cornerRadius).toBe(8);
+  });
+
+  it("rejects negative typed corner radius", () => {
+    expect(motionNodeSchema.safeParse({
+      id: "card",
+      kind: "roundedRectangle",
+      cornerRadius: -1
+    }).success).toBe(false);
+  });
+
+  it("rejects non-finite typed corner radius", () => {
+    expect(motionNodeSchema.safeParse({
+      id: "card",
+      kind: "roundedRectangle",
+      cornerRadius: Number.NaN
+    }).success).toBe(false);
+  });
+
   it("keeps untyped corner radius style keys parseable", () => {
     const node = motionNodeSchema.parse({
       id: "card",
@@ -679,7 +705,19 @@ describe("cornerRadiiSchema", () => {
       style: { cornerRadius: 8 }
     });
 
+    expect(node).not.toHaveProperty("cornerRadius");
     expect(node).not.toHaveProperty("cornerRadii");
+    expect(node.style.cornerRadius).toBe(8);
+  });
+
+  it("keeps style corner radius parseable without typed corner radius", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      style: { cornerRadius: 8 }
+    });
+
+    expect(node.cornerRadius).toBeUndefined();
     expect(node.style.cornerRadius).toBe(8);
   });
 });

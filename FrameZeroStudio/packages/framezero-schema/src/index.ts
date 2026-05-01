@@ -235,6 +235,7 @@ export const motionNodeSchema = z
     fills: z.array(fillSchema).default([]),
     stroke: strokeSpecSchema.optional(),
     cornerRadii: cornerRadiiSchema.optional(),
+    cornerRadius: nonNegativeNumberSchema.optional(),
     shadow: shadowSpecSchema.optional(),
     layerBlur: nonNegativeNumberSchema.optional(),
     blendMode: blendModeSchema.optional(),
