@@ -7,7 +7,9 @@ import {
   type MotionFill,
   type MotionForce,
   type MotionNode,
+  type MotionReduceMotionPolicy,
   type MotionRule,
+  type MotionSensitivityLevel,
   type MotionSpec,
   type MotionValue,
   animatedProperties,
@@ -19,6 +21,7 @@ export type StudioProject = {
   id: string;
   name: string;
   rootNodeId: string;
+  reduceMotionPolicy?: MotionReduceMotionPolicy;
   nodes: Record<string, StudioNode>;
   roles: Record<string, StudioRole>;
   phases: Record<string, StudioPhase>;
@@ -90,6 +93,7 @@ export type StudioPhase = {
     direction: "clockwise" | "anticlockwise";
     bend?: number;
     motion: MotionSpec;
+    motionSensitivity?: MotionSensitivityLevel;
   }>;
   jiggles: Array<{
     select: MotionAssignment["select"];
@@ -98,6 +102,7 @@ export type StudioPhase = {
     cycles: number;
     startDirection: "negative" | "positive" | "clockwise" | "anticlockwise";
     decay?: number;
+    motionSensitivity?: MotionSensitivityLevel;
   }>;
   actions: MotionAction[];
 };
@@ -122,7 +127,7 @@ export function compileStudioProject(project: StudioProject): CompileResult {
   const states = compileStates(project);
   const transitions = compileTransitions(project);
 
-  const document = parseMotionDocument({
+  const input: Record<string, unknown> = {
     schemaVersion: 1,
     root: project.rootNodeId,
     nodes,
@@ -138,7 +143,12 @@ export function compileStudioProject(project: StudioProject): CompileResult {
     dragBindings: [...(project.dragBindings ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     bodies: [...(project.bodies ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     forces: [...(project.forces ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  });
+  };
+  if (project.reduceMotionPolicy !== undefined) {
+    input.reduceMotionPolicy = project.reduceMotionPolicy;
+  }
+
+  const document = parseMotionDocument(input);
 
   return {
     document,
@@ -251,9 +261,24 @@ function compileTransitions(project: StudioProject): MotionDocument["machines"][
       to: `state${index + 1}`,
       trigger,
       delay,
-      rules: phase.rules.filter((rule) => selectorMatchesLiveNodes(project, rule.select)),
-      arcs: phase.arcs.filter((arc) => selectorMatchesLiveNodes(project, arc.select)),
-      jiggles: phase.jiggles.filter((jiggle) => selectorMatchesLiveNodes(project, jiggle.select)),
+      rules: phase.rules
+        .filter((rule) => selectorMatchesLiveNodes(project, rule.select))
+        .map((rule) => {
+          const { motionSensitivity, ...rest } = rule;
+          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+        }),
+      arcs: phase.arcs
+        .filter((arc) => selectorMatchesLiveNodes(project, arc.select))
+        .map((arc) => {
+          const { motionSensitivity, ...rest } = arc;
+          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+        }),
+      jiggles: phase.jiggles
+        .filter((jiggle) => selectorMatchesLiveNodes(project, jiggle.select))
+        .map((jiggle) => {
+          const { motionSensitivity, ...rest } = jiggle;
+          return motionSensitivity === undefined ? rest : { ...rest, motionSensitivity };
+        }),
       enter: [],
       exit: [],
       spawns: [],

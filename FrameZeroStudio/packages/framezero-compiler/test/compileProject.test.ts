@@ -76,6 +76,50 @@ describe("compileStudioProject", () => {
     expect(JSON.stringify(card)).not.toContain("componentId");
   });
 
+  it("omits reduce motion policy when it is not defined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+
+    expect(result.document).not.toHaveProperty("reduceMotionPolicy");
+    expect(result.json).not.toContain("reduceMotionPolicy");
+  });
+
+  it("forwards reduce motion policy when it is defined", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.reduceMotionPolicy = "ignore";
+
+    const result = compileStudioProject(project);
+
+    expect(result.document.reduceMotionPolicy).toBe("ignore");
+    expect(result.json).toContain('"reduceMotionPolicy": "ignore"');
+  });
+
+  it("forwards per-rule motion sensitivity only when defined", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.phases.communicatingGesture.rules[0]!.motionSensitivity = "essential";
+    project.phases.communicatingGesture.arcs.push({
+      select: { id: "card" },
+      x: "offset.x",
+      y: "offset.y",
+      direction: "clockwise",
+      motion: { type: "timed", duration: 0.3 },
+      motionSensitivity: "decorative"
+    });
+    project.phases.communicatingGesture.jiggles.push({
+      select: { id: "icon", properties: ["rotation"] },
+      amplitude: 8,
+      duration: 0.2,
+      cycles: 2,
+      startDirection: "clockwise"
+    });
+
+    const result = compileStudioProject(project);
+    const transition = result.document.machines[0]?.transitions[0];
+
+    expect(transition?.rules[0]?.motionSensitivity).toBe("essential");
+    expect(transition?.arcs[0]?.motionSensitivity).toBe("decorative");
+    expect(transition?.jiggles[0]).not.toHaveProperty("motionSensitivity");
+  });
+
   it("preserves nested locked image component layers in runtime JSON", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.screen.childIds = ["card", "title"];

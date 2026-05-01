@@ -43,6 +43,8 @@ export const metrics = [
 export const nodeKindSchema = z.enum(nodeKinds);
 export const animatedPropertySchema = z.enum(animatedProperties);
 export const metricSchema = z.enum(metrics);
+export const reduceMotionPolicySchema = z.enum(["respect", "ignore"]);
+export const motionSensitivitySchema = z.enum(["essential", "decorative"]);
 
 export const finiteNumberSchema = z.number().finite();
 export const nonNegativeNumberSchema = finiteNumberSchema.min(0);
@@ -182,7 +184,8 @@ export const motionSpecSchema = z.discriminatedUnion("type", [
 export const motionRuleSchema = z.object({
   select: propertySelectorSchema,
   motion: motionSpecSchema,
-  delay: nonNegativeNumberSchema.optional()
+  delay: nonNegativeNumberSchema.optional(),
+  motionSensitivity: motionSensitivitySchema.optional()
 });
 
 export const arcRuleSchema = z.object({
@@ -191,7 +194,8 @@ export const arcRuleSchema = z.object({
   y: animatedPropertySchema,
   direction: z.enum(["clockwise", "anticlockwise"]),
   bend: finiteNumberSchema.optional(),
-  motion: motionSpecSchema
+  motion: motionSpecSchema,
+  motionSensitivity: motionSensitivitySchema.optional()
 });
 
 export const jiggleRuleSchema = z.object({
@@ -200,7 +204,8 @@ export const jiggleRuleSchema = z.object({
   duration: positiveNumberSchema,
   cycles: positiveNumberSchema,
   startDirection: z.enum(["negative", "positive", "clockwise", "anticlockwise"]),
-  decay: nonNegativeNumberSchema.optional()
+  decay: nonNegativeNumberSchema.optional(),
+  motionSensitivity: motionSensitivitySchema.optional()
 });
 
 const actionBaseSchema = z.object({
@@ -217,6 +222,7 @@ const emittedVisualSpecBaseSchema = z.object({
   from: motionValueRecordSchema.default({}),
   to: motionValueRecordSchema.default({}),
   motion: motionSpecSchema,
+  motionSensitivity: motionSensitivitySchema.optional(),
   lifetime: positiveNumberSchema
 });
 
@@ -374,6 +380,7 @@ export const forceSchema = z.object({
 export const motionDocumentSchema = z
   .object({
     schemaVersion: z.literal(1),
+    reduceMotionPolicy: reduceMotionPolicySchema.optional(),
     root: z.string().min(1),
     nodes: z.array(motionNodeSchema).min(1),
     machines: z.array(stateMachineSchema),
@@ -385,6 +392,8 @@ export const motionDocumentSchema = z
   .superRefine(validateDocumentReferences);
 
 export type MotionDocument = z.infer<typeof motionDocumentSchema>;
+export type MotionReduceMotionPolicy = z.infer<typeof reduceMotionPolicySchema>;
+export type MotionSensitivityLevel = z.infer<typeof motionSensitivitySchema>;
 export type MotionNode = z.infer<typeof motionNodeSchema>;
 export type MotionValue = z.infer<typeof motionValueSchema>;
 export type MotionFill = z.infer<typeof fillSchema>;

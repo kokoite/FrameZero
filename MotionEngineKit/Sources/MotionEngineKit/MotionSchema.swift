@@ -14,8 +14,19 @@ enum MotionActionLimits {
     static let maxActiveComponents = 256
 }
 
+enum MotionReduceMotionPolicy: String, Decodable {
+    case respect
+    case ignore
+}
+
+enum MotionSensitivity: String, Decodable {
+    case essential
+    case decorative
+}
+
 struct MotionDocument: Decodable {
     let schemaVersion: Int
+    let reduceMotionPolicy: MotionReduceMotionPolicy?
     let root: NodeID
     let nodes: [MotionNode]
     let machines: [MotionStateMachine]
@@ -26,6 +37,7 @@ struct MotionDocument: Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
+        case reduceMotionPolicy
         case root
         case nodes
         case machines
@@ -39,6 +51,7 @@ struct MotionDocument: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        reduceMotionPolicy = try container.decodeIfPresent(MotionReduceMotionPolicy.self, forKey: .reduceMotionPolicy)
         root = try container.decode(NodeID.self, forKey: .root)
         nodes = try container.decode([MotionNode].self, forKey: .nodes)
         machines = try container.decode([MotionStateMachine].self, forKey: .machines)
@@ -598,6 +611,7 @@ struct MotionRule: Decodable {
     let select: MotionPropertySelector
     let motion: MotionSpec
     let delay: Double?
+    let motionSensitivity: MotionSensitivity?
 }
 
 struct MotionArcRule: Decodable {
@@ -607,6 +621,7 @@ struct MotionArcRule: Decodable {
     let direction: MotionArcDirection
     let bend: Double?
     let motion: MotionSpec
+    let motionSensitivity: MotionSensitivity?
 }
 
 enum MotionArcDirection: String, Decodable {
@@ -621,6 +636,7 @@ struct MotionJiggleRule: Decodable {
     let cycles: Double
     let startDirection: MotionJiggleDirection
     let decay: Double?
+    let motionSensitivity: MotionSensitivity?
 }
 
 enum MotionJiggleDirection: String, Decodable {

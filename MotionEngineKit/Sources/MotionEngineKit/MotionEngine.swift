@@ -20,6 +20,7 @@ struct PendingChannelTarget {
     let key: MotionChannelKey
     let target: Double
     let motion: MotionSpec
+    let sensitivity: MotionSensitivity?
     var remainingDelay: Double
 }
 
@@ -258,6 +259,7 @@ private struct EngineSnapshot {
     let editableDocumentURL: URL?
     let lastLoadedModificationDate: Date?
     let hotReloadPath: String?
+    let documentPolicy: MotionReduceMotionPolicy?
 }
 
 @MainActor
@@ -266,7 +268,12 @@ public final class MotionEngine {
 
     public var isDebugLoggingEnabled = false
 
+    private let accessibility: MotionAccessibility
+    private var accessibilityObservation: AnyObject?
+    @Published public private(set) var isMotionReduced: Bool
+
     private(set) var document: MotionDocument?
+    private var documentPolicy: MotionReduceMotionPolicy?
     public private(set) var errorMessage: String?
     public private(set) var statusMessage: String = "Loading"
     public private(set) var hotReloadPath: String?
@@ -301,7 +308,15 @@ public final class MotionEngine {
     private var lastLoadedModificationDate: Date?
     private var hapticPerformer: MotionHapticPerformer = DefaultMotionHapticPerformer()
 
-    public init() {}
+    public init(accessibility: MotionAccessibility = SystemMotionAccessibility()) {
+        self.accessibility = accessibility
+        self.isMotionReduced = accessibility.isReduceMotionEnabled
+        self.accessibilityObservation = accessibility.observeChanges { [weak self] enabled in
+            Task { @MainActor [weak self] in
+                self?.isMotionReduced = enabled
+            }
+        }
+    }
 
     func setHapticPerformerForTesting(_ performer: MotionHapticPerformer) {
         hapticPerformer = performer
@@ -599,7 +614,9 @@ public final class MotionEngine {
     }
 
     func slingshotTrails() -> [MotionTrailRuntime] {
-        activeSlingshotDrags.values.map { drag in
+        guard !shouldReduceMotion(sensitivity: nil) else { return [] }
+
+        return activeSlingshotDrags.values.map { drag in
             let trail = drag.binding.trail
             let visualCharge = pow(
                 min(max(drag.charge, 0), 1),
@@ -630,7 +647,9 @@ public final class MotionEngine {
     }
 
     func slingshotTrajectoryPoints() -> [MotionTrajectoryPointRuntime] {
-        activeSlingshotDrags.values.flatMap { drag in
+        guard !shouldReduceMotion(sensitivity: nil) else { return [] }
+
+        return activeSlingshotDrags.values.flatMap { drag in
             let spec = drag.binding.trajectory
             let color = spec?.color
             let configuredPointCount = max(spec?.points ?? MotionRuntimeDefaults.trajectoryPoints, 0)
@@ -789,18 +808,27 @@ public final class MotionEngine {
                     type: "spring",
                     response: MotionRuntimeDefaults.snapOffsetSpringResponse,
                     dampingFraction: MotionRuntimeDefaults.snapOffsetSpringDamping
-                ))
+                )),
+                sensitivity: nil,
+                documentPolicy: documentPolicy,
+                isMotionReduced: isMotionReduced
             )
             channels[key] = channel
         }
 
         let scaleKey = MotionChannelKey(nodeID: nodeID, property: "scale")
         if var scale = channels[scaleKey] {
-            scale.setTarget(1, motion: .spring(SpringSpec(
-                type: "spring",
-                response: MotionRuntimeDefaults.snapScaleSpringResponse,
-                dampingFraction: MotionRuntimeDefaults.snapScaleSpringDamping
-            )))
+            scale.setTarget(
+                1,
+                motion: .spring(SpringSpec(
+                    type: "spring",
+                    response: MotionRuntimeDefaults.snapScaleSpringResponse,
+                    dampingFraction: MotionRuntimeDefaults.snapScaleSpringDamping
+                )),
+                sensitivity: nil,
+                documentPolicy: documentPolicy,
+                isMotionReduced: isMotionReduced
+            )
             channels[scaleKey] = scale
         }
 
@@ -824,18 +852,27 @@ public final class MotionEngine {
                     type: "spring",
                     response: MotionRuntimeDefaults.releaseShapeSpringResponse,
                     dampingFraction: MotionRuntimeDefaults.releaseShapeSpringDamping
-                ))
+                )),
+                sensitivity: nil,
+                documentPolicy: documentPolicy,
+                isMotionReduced: isMotionReduced
             )
             channels[key] = channel
         }
 
         let scaleKey = MotionChannelKey(nodeID: nodeID, property: "scale")
         if var scale = channels[scaleKey] {
-            scale.setTarget(1, motion: .spring(SpringSpec(
-                type: "spring",
-                response: MotionRuntimeDefaults.releaseScaleSpringResponse,
-                dampingFraction: MotionRuntimeDefaults.releaseScaleSpringDamping
-            )))
+            scale.setTarget(
+                1,
+                motion: .spring(SpringSpec(
+                    type: "spring",
+                    response: MotionRuntimeDefaults.releaseScaleSpringResponse,
+                    dampingFraction: MotionRuntimeDefaults.releaseScaleSpringDamping
+                )),
+                sensitivity: nil,
+                documentPolicy: documentPolicy,
+                isMotionReduced: isMotionReduced
+            )
             channels[scaleKey] = scale
         }
     }
@@ -1017,12 +1054,14 @@ public final class MotionEngine {
             viewport: viewport,
             editableDocumentURL: editableDocumentURL,
             lastLoadedModificationDate: lastLoadedModificationDate,
-            hotReloadPath: hotReloadPath
+            hotReloadPath: hotReloadPath,
+            documentPolicy: documentPolicy
         )
     }
 
     private func restore(_ snapshot: EngineSnapshot) {
         document = snapshot.document
+        documentPolicy = snapshot.documentPolicy
         errorMessage = snapshot.errorMessage
         statusMessage = snapshot.statusMessage
         nodesByID = snapshot.nodesByID
@@ -1060,6 +1099,7 @@ public final class MotionEngine {
         guard document.schemaVersion == 1 else {
             throw MotionRuntimeError.validation("Unsupported schema version \(document.schemaVersion)")
         }
+        documentPolicy = document.reduceMotionPolicy
 
         try validateUnique(document.nodes.map(\.id), label: "Node IDs")
         try validateUnique(document.machines.map(\.id), label: "Machine IDs")
@@ -1999,7 +2039,13 @@ public final class MotionEngine {
                 if snap {
                     channel.current = target
                     channel.velocity = 0
-                    channel.setTarget(target, motion: motion)
+                    channel.setTarget(
+                        target,
+                        motion: motion,
+                        sensitivity: rule?.motionSensitivity,
+                        documentPolicy: documentPolicy,
+                        isMotionReduced: isMotionReduced
+                    )
                 } else if let delay = rule?.delay, delay > 0 {
                     channel.target = channel.current
                     channel.velocity = 0
@@ -2010,10 +2056,17 @@ public final class MotionEngine {
                         key: key,
                         target: target,
                         motion: motion,
+                        sensitivity: rule?.motionSensitivity,
                         remainingDelay: delay
                     ))
                 } else {
-                    channel.setTarget(target, motion: motion)
+                    channel.setTarget(
+                        target,
+                        motion: motion,
+                        sensitivity: rule?.motionSensitivity,
+                        documentPolicy: documentPolicy,
+                        isMotionReduced: isMotionReduced
+                    )
                 }
                 channels[key] = channel
             }
@@ -2042,6 +2095,10 @@ public final class MotionEngine {
         .immediate
     }
 
+    private func shouldReduceMotion(sensitivity: MotionSensitivity?) -> Bool {
+        documentPolicy != .ignore && isMotionReduced && sensitivity != .essential
+    }
+
     private func refreshResolvedTargets(snap: Bool) {
         for (key, value) in stateTargets {
             guard let target = resolveNumber(value) else { continue }
@@ -2053,7 +2110,13 @@ public final class MotionEngine {
                 animationStart: target,
                 animationElapsed: 0
             )
-            channel.setTarget(target, motion: channel.motion)
+            channel.setTarget(
+                target,
+                motion: channel.motion,
+                sensitivity: nil,
+                documentPolicy: documentPolicy,
+                isMotionReduced: isMotionReduced
+            )
             if snap {
                 channel.current = target
                 channel.velocity = 0
@@ -2100,6 +2163,22 @@ public final class MotionEngine {
                     animationElapsed: 0
                 )
 
+                var progress = MotionChannel(
+                    current: 0,
+                    velocity: 0,
+                    target: 0,
+                    motion: .immediate,
+                    animationStart: 0,
+                    animationElapsed: 0
+                )
+                progress.setTarget(
+                    1,
+                    motion: arc.motion,
+                    sensitivity: arc.motionSensitivity,
+                    documentPolicy: documentPolicy,
+                    isMotionReduced: isMotionReduced
+                )
+
                 activeArcs.append(MotionArcRuntime(
                     nodeID: nodeID,
                     xProperty: arc.x,
@@ -2110,14 +2189,7 @@ public final class MotionEngine {
                     endY: endY,
                     bend: bend,
                     direction: arc.direction,
-                    progress: MotionChannel(
-                        current: 0,
-                        velocity: 0,
-                        target: 1,
-                        motion: arc.motion,
-                        animationStart: 0,
-                        animationElapsed: 0
-                    )
+                    progress: progress
                 ))
             }
         }
@@ -2125,6 +2197,8 @@ public final class MotionEngine {
 
     private func configureJiggleMotions(for transition: MotionTransition) throws {
         for jiggle in transition.jiggles {
+            guard !shouldReduceMotion(sensitivity: jiggle.motionSensitivity) else { continue }
+
             guard let amplitude = resolveNumber(jiggle.amplitude) else {
                 throw MotionRuntimeError.validation("Jiggle in transition '\(transition.id)' has unresolved amplitude")
             }
@@ -2214,6 +2288,7 @@ public final class MotionEngine {
         case let .haptic(haptic):
             hapticPerformer.perform(haptic)
         case let .screenShake(shake):
+            guard !shouldReduceMotion(sensitivity: nil) else { return }
             activeScreenShakes.append(MotionScreenShakeRuntime(
                 id: UUID().uuidString,
                 amplitude: shake.amplitude,
@@ -2223,8 +2298,10 @@ public final class MotionEngine {
                 elapsed: 0
             ))
         case let .emitParticles(emission):
+            guard !shouldReduceMotion(sensitivity: nil) else { return }
             spawnParticles(from: emission)
         case let .spawnComponents(spawn):
+            guard !shouldReduceMotion(sensitivity: nil) else { return }
             spawnComponents(from: spawn)
         }
     }
@@ -2525,7 +2602,13 @@ public final class MotionEngine {
             if pendingTargets[index].remainingDelay <= 0 {
                 let pending = pendingTargets[index]
                 if var channel = channels[pending.key] {
-                    channel.setTarget(pending.target, motion: pending.motion)
+                    channel.setTarget(
+                        pending.target,
+                        motion: pending.motion,
+                        sensitivity: pending.sensitivity,
+                        documentPolicy: documentPolicy,
+                        isMotionReduced: isMotionReduced
+                    )
                     channels[pending.key] = channel
                 }
                 pendingTargets.remove(at: index)
@@ -2866,15 +2949,50 @@ private extension MotionViewport {
 }
 
 private extension MotionChannel {
+    static let reducedMotionSpec = MotionSpec.timed(TimedSpec(
+        type: "timed",
+        duration: 0.15,
+        easing: .easeOut
+    ))
+
     var isSettled: Bool {
         abs(current - target) < 0.001 && abs(velocity) < 0.001
     }
 
-    mutating func setTarget(_ newTarget: Double, motion newMotion: MotionSpec) {
+    mutating func setTarget(
+        _ newTarget: Double,
+        motion newMotion: MotionSpec,
+        sensitivity: MotionSensitivity? = nil,
+        documentPolicy: MotionReduceMotionPolicy? = nil,
+        isMotionReduced: Bool = false
+    ) {
         target = newTarget
-        motion = newMotion
+        motion = effectiveMotion(
+            newMotion,
+            sensitivity: sensitivity,
+            documentPolicy: documentPolicy,
+            isMotionReduced: isMotionReduced
+        )
         animationStart = current
         animationElapsed = 0
+    }
+
+    private func effectiveMotion(
+        _ spec: MotionSpec,
+        sensitivity: MotionSensitivity?,
+        documentPolicy: MotionReduceMotionPolicy?,
+        isMotionReduced: Bool
+    ) -> MotionSpec {
+        guard documentPolicy != .ignore, isMotionReduced, sensitivity != .essential else {
+            return spec
+        }
+
+        switch spec {
+        case .spring, .timed:
+            return Self.reducedMotionSpec
+        case .immediate:
+            return spec
+        }
     }
 
     mutating func integrate(dt: CFTimeInterval) {

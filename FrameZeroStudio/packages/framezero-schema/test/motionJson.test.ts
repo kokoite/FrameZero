@@ -1,7 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { documentUpdatePayloadSchema, makePreviewEnvelope, previewEnvelopeSchema, safeParseMotionDocument } from "../src/index";
+import { documentUpdatePayloadSchema, makePreviewEnvelope, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument } from "../src/index";
 
 describe("motionDocumentSchema", () => {
+  it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
+    const document = minimalMotionDocument({
+      reduceMotionPolicy: "respect",
+      rule: { motionSensitivity: "essential" }
+    });
+
+    const parsed = parseMotionDocument(document);
+
+    expect(parsed.reduceMotionPolicy).toBe("respect");
+    expect(parsed.machines[0]?.transitions[0]?.rules[0]?.motionSensitivity).toBe("essential");
+  });
+
+  it("rejects invalid reduce motion policy values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      reduceMotionPolicy: "foo"
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("keeps reduce motion keys absent when not authored", () => {
+    const parsed = parseMotionDocument(minimalMotionDocument());
+    const transition = parsed.machines[0]?.transitions[0];
+
+    expect(Object.keys(parsed)).not.toContain("reduceMotionPolicy");
+    expect(Object.keys(transition?.rules[0] ?? {})).not.toContain("motionSensitivity");
+  });
+
   it("accepts a role selector that targets multiple existing components", () => {
     const result = safeParseMotionDocument({
       schemaVersion: 1,
@@ -357,3 +385,50 @@ describe("preview protocol schemas", () => {
     expect(payload.json.root).toBe("screen");
   });
 });
+
+function minimalMotionDocument(options: {
+  reduceMotionPolicy?: unknown;
+  rule?: Record<string, unknown>;
+} = {}) {
+  return {
+    schemaVersion: 1,
+    ...(options.reduceMotionPolicy === undefined ? {} : { reduceMotionPolicy: options.reduceMotionPolicy }),
+    root: "screen",
+    nodes: [
+      { id: "screen", kind: "zstack", roles: ["screen"], layout: {}, style: {}, presentation: {}, children: ["card"] },
+      { id: "card", kind: "roundedRectangle", roles: [], layout: {}, style: {}, presentation: { "offset.x": 0 }, children: [] }
+    ],
+    machines: [
+      {
+        id: "main",
+        initial: "idle",
+        states: [
+          { id: "idle", values: [{ select: { id: "card", properties: ["offset.x"] }, value: 0 }] },
+          { id: "moved", values: [{ select: { id: "card", properties: ["offset.x"] }, value: 100 }] }
+        ],
+        transitions: [
+          {
+            id: "move",
+            from: "idle",
+            to: "moved",
+            trigger: "tapCard",
+            rules: [
+              {
+                select: { id: "card", properties: ["offset.x"] },
+                motion: { type: "spring", response: 0.4, dampingFraction: 0.8 },
+                ...options.rule
+              }
+            ],
+            arcs: [],
+            jiggles: [],
+            actions: []
+          }
+        ]
+      }
+    ],
+    triggers: [{ id: "tapCard", type: "tap", selector: { id: "card" } }],
+    dragBindings: [],
+    bodies: [],
+    forces: []
+  };
+}
