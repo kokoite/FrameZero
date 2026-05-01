@@ -1472,16 +1472,6 @@ section {
   height: 100%;
 }
 
-.origin-label {
-  position: absolute;
-  left: calc(50% + 8px);
-  top: calc(50% + 8px);
-  z-index: 4;
-  color: var(--ae-dim);
-  font-size: 10.5px;
-  font-weight: 470;
-}
-
 .ruler {
   position: absolute;
   z-index: 3;

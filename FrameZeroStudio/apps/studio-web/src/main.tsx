@@ -1679,7 +1679,6 @@ function App() {
             <div className="axis x-axis" />
             <div className="axis y-axis" />
             <span className="artboard-label">{canvasWidth} × {canvasHeight}</span>
-            <span className="origin-label">origin</span>
             <div className="ruler ruler-top" aria-hidden="true">
               {rulerTicks(canvasWidth).map((tick) => <span key={tick} style={{ left: `${(tick / canvasWidth) * 100}%` }}>{tick}</span>)}
             </div>
