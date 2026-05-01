@@ -165,6 +165,18 @@ export const motionAssignmentSchema = z.object({
   value: motionValueSchema
 });
 
+export const timedEasingSchema = z.union([
+  z.enum(["linear", "easeIn", "easeOut", "easeInOut"]),
+  z.object({
+    cubicBezier: z.tuple([
+      z.number().finite().min(0).max(1),
+      z.number().finite(),
+      z.number().finite().min(0).max(1),
+      z.number().finite()
+    ])
+  }).strict()
+]);
+
 export const motionSpecSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("spring"),
@@ -174,7 +186,7 @@ export const motionSpecSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("timed"),
     duration: positiveNumberSchema,
-    easing: z.enum(["linear", "easeIn", "easeOut", "easeInOut"]).optional()
+    easing: timedEasingSchema.optional()
   }),
   z.object({
     type: z.literal("immediate")

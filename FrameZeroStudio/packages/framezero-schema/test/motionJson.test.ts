@@ -346,6 +346,62 @@ describe("motionDocumentSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("accepts existing timed easing keywords", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: "easeOut" } }
+    }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts cubic-bezier timed easing", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.25, 0.1, 0.25, 1] } } }
+    }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects cubic-bezier easing when x1 is below zero", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [-0.1, 0, 0.5, 1] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier easing when x2 is above one", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 1.1, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier easing with three tuple elements", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier easing with five tuple elements", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5, 0.5, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier easing objects with extra keys", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5, 0.5], extra: 1 } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("preview protocol schemas", () => {
@@ -432,3 +488,61 @@ function minimalMotionDocument(options: {
     forces: []
   };
 }
+
+describe("timedEasingSchema (cubic-bezier)", () => {
+  it("parses existing string easing values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: "easeOut" } }
+    }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it("parses cubic-bezier easing values", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.25, 0.1, 0.25, 1] } } }
+    }));
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects cubic-bezier x1 values below zero", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [-0.1, 0, 0.5, 1] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier x2 values above one", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 1.1, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier tuples with three elements", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier tuples with five elements", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5, 0.5, 0.5] } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects cubic-bezier objects with extra keys", () => {
+    const result = safeParseMotionDocument(minimalMotionDocument({
+      rule: { motion: { type: "timed", duration: 0.4, easing: { cubicBezier: [0.5, 0.5, 0.5, 0.5], extra: 1 } } }
+    }));
+
+    expect(result.success).toBe(false);
+  });
+});

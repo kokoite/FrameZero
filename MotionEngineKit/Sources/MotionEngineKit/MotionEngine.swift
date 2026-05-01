@@ -3034,21 +3034,36 @@ private extension MotionChannel {
     }
 }
 
-private extension Optional where Wrapped == TimedEasing {
-    func eased(_ progress: Double) -> Double {
+extension Optional where Wrapped == TimedEasing {
+    func eased(_ p: Double) -> Double {
         switch self ?? .easeInOut {
-        case .linear:
-            return progress
-        case .easeIn:
-            return progress * progress
-        case .easeOut:
-            return 1 - pow(1 - progress, 2)
-        case .easeInOut:
-            return progress < 0.5
-                ? 2 * progress * progress
-                : 1 - (pow(-2 * progress + 2, 2) / 2)
+        case .linear:    return p
+        case .easeIn:    return p * p
+        case .easeOut:   return 1 - pow(1 - p, 2)
+        case .easeInOut: return p < 0.5 ? 2*p*p : 1 - pow(-2*p + 2, 2) / 2
+        case let .cubicBezier(x1, y1, x2, y2):
+            return cubicBezierEval(p: p, x1: x1, y1: y1, x2: x2, y2: y2)
         }
     }
+}
+
+@inline(__always)
+func cubicBezierEval(p: Double, x1: Double, y1: Double, x2: Double, y2: Double) -> Double {
+    if p <= 0 { return 0 }
+    if p >= 1 { return 1 }
+    func bx(_ t: Double) -> Double { let u = 1 - t; return 3*u*u*t*x1 + 3*u*t*t*x2 + t*t*t }
+    func by(_ t: Double) -> Double { let u = 1 - t; return 3*u*u*t*y1 + 3*u*t*t*y2 + t*t*t }
+    func dx(_ t: Double) -> Double { let u = 1 - t; return 3*u*u*x1 + 6*u*t*(x2 - x1) + 3*t*t*(1 - x2) }
+    var t = p
+    for _ in 0..<8 {
+        let err = bx(t) - p
+        if abs(err) < 1e-6 { break }
+        let d = dx(t)
+        if abs(d) < 1e-6 { break }
+        t -= err / d
+        if t < 0 { t = 0 } else if t > 1 { t = 1 }
+    }
+    return by(t)
 }
 
 enum MotionRuntimeError: LocalizedError {

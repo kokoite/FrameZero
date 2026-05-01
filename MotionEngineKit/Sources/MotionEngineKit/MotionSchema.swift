@@ -902,11 +902,46 @@ struct TimedSpec: Decodable, Equatable {
     let easing: TimedEasing?
 }
 
-enum TimedEasing: String, Decodable {
+enum TimedEasing: Decodable, Equatable {
     case linear
     case easeIn
     case easeOut
     case easeInOut
+    case cubicBezier(Double, Double, Double, Double)
+
+    private enum CodingKeys: String, CodingKey { case cubicBezier }
+
+    init(from decoder: Decoder) throws {
+        if let s = try? decoder.singleValueContainer().decode(String.self) {
+            switch s {
+            case "linear":    self = .linear
+            case "easeIn":    self = .easeIn
+            case "easeOut":   self = .easeOut
+            case "easeInOut": self = .easeInOut
+            default:
+                throw DecodingError.dataCorruptedError(in: try decoder.singleValueContainer(),
+                    debugDescription: "Unknown easing keyword \"\(s)\"")
+            }
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        var arr = try c.nestedUnkeyedContainer(forKey: .cubicBezier)
+        let x1 = try arr.decode(Double.self), y1 = try arr.decode(Double.self)
+        let x2 = try arr.decode(Double.self), y2 = try arr.decode(Double.self)
+        if !arr.isAtEnd {
+            throw DecodingError.dataCorruptedError(forKey: .cubicBezier, in: c,
+                debugDescription: "cubicBezier requires exactly 4 numbers")
+        }
+        guard [x1, y1, x2, y2].allSatisfy({ $0.isFinite }) else {
+            throw DecodingError.dataCorruptedError(forKey: .cubicBezier, in: c,
+                debugDescription: "cubicBezier values must be finite")
+        }
+        guard (0.0...1.0).contains(x1), (0.0...1.0).contains(x2) else {
+            throw DecodingError.dataCorruptedError(forKey: .cubicBezier, in: c,
+                debugDescription: "cubicBezier x1 and x2 must be in [0, 1] (CSS spec)")
+        }
+        self = .cubicBezier(x1, y1, x2, y2)
+    }
 }
 
 enum MotionValue: Decodable, Equatable {
