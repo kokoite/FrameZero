@@ -22,6 +22,11 @@ private enum SampleTypography {
     static let value = Font.system(size: 11, weight: .medium, design: .monospaced)
 }
 
+private enum SimulatorPresentationMode {
+    case composition
+    case playground
+}
+
 struct ContentView: View {
     private static let engine: MotionEngine = {
         let engine = MotionEngine()
@@ -38,6 +43,7 @@ struct ContentView: View {
     @State private var selectedPhaseID: UUID? = MotionClip.wideArcPhase.id
     @State private var status = "Ready"
     @State private var autoPreviewTask: Task<Void, Never>?
+    @State private var presentationMode: SimulatorPresentationMode = .composition
 
     init() {
         _previewSync = StateObject(wrappedValue: PreviewSyncClient(engine: Self.engine))
@@ -45,27 +51,13 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                playground
-                    .ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    header
-                        .padding(.horizontal, 18)
-                        .padding(.top, proxy.safeAreaInsets.top + 10)
-
-                    Spacer(minLength: 0)
-
-                    controlPanel
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, proxy.safeAreaInsets.bottom + 12)
-                        .frame(maxHeight: min(440, proxy.size.height * 0.48))
-                }
-            }
+            currentScreen(in: proxy)
             .background(Color(red: 0.055, green: 0.055, blue: 0.075))
         }
+        .statusBarHidden(presentationMode == .composition)
         .onAppear {
             previewSync.onApplied = {
+                presentationMode = .composition
                 frame += 1
                 status = previewSync.status
             }
@@ -81,6 +73,52 @@ struct ContentView: View {
                 if Self.engine.tick(dt: dt) {
                     frame += 1
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func currentScreen(in proxy: GeometryProxy) -> some View {
+        switch presentationMode {
+        case .composition:
+            compositionScreen
+        case .playground:
+            playgroundScreen(in: proxy)
+        }
+    }
+
+    private var compositionScreen: some View {
+        MotionRuntimeView(engine: Self.engine, frame: frame)
+            .ignoresSafeArea()
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: 0.8) {
+                presentationMode = .playground
+                status = previewSync.status
+            }
+            .accessibilityAction(named: Text("Open UI Screen")) {
+                presentationMode = .playground
+                status = previewSync.status
+            }
+            .accessibilityLabel("FrameZero render preview")
+            .accessibilityHint("Long press to open playground controls")
+    }
+
+    private func playgroundScreen(in proxy: GeometryProxy) -> some View {
+        ZStack {
+            playground
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 18)
+                    .padding(.top, proxy.safeAreaInsets.top + 10)
+
+                Spacer(minLength: 0)
+
+                controlPanel
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, proxy.safeAreaInsets.bottom + 12)
+                    .frame(maxHeight: min(440, proxy.size.height * 0.48))
             }
         }
     }
@@ -122,6 +160,22 @@ struct ContentView: View {
             }
 
             Spacer(minLength: 8)
+
+            Button {
+                presentationMode = .composition
+            } label: {
+                Image(systemName: "rectangle.inset.filled")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.white.opacity(0.16), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show clean render preview")
 
             Button {
                 previewSync.reconnect()

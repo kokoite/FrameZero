@@ -33,7 +33,7 @@ enum MotionRenderStyle {
         return legacyFillStyle(for: style)
     }
 
-    private static func fillStyle(for fill: MotionFill) -> AnyShapeStyle {
+    static func fillStyle(for fill: MotionFill) -> AnyShapeStyle {
         let opacity = fill.opacity ?? 1
 
         switch fill.type {
@@ -49,13 +49,26 @@ enum MotionRenderStyle {
             ).opacity(opacity))
         case .radialGradient:
             let stops = gradientStops(fill.colors)
+            let center = radialCenter(for: fill)
             return AnyShapeStyle(RadialGradient(
                 stops: stops,
-                center: UnitPoint(x: fill.centerX ?? 0.5, y: fill.centerY ?? 0.5),
+                center: center,
                 startRadius: 0,
                 endRadius: fill.radius ?? 0.5
             ).opacity(opacity))
         }
+    }
+
+    static func needsCanvasRadialFill(_ fill: MotionFill) -> Bool {
+        fill.type == .radialGradient && fill.gradientTransform != nil
+    }
+
+    static func gradient(_ stops: [MotionColorStop]) -> Gradient {
+        Gradient(stops: gradientStops(stops))
+    }
+
+    static func gradientOpacity(for fill: MotionFill) -> Double {
+        fill.opacity ?? 1
     }
 
     private static func legacyFillStyle(for style: [String: MotionValue]) -> AnyShapeStyle {
@@ -92,5 +105,9 @@ enum MotionRenderStyle {
             start: UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
             end: UnitPoint(x: 0.5 + dx, y: 0.5 + dy)
         )
+    }
+
+    private static func radialCenter(for fill: MotionFill) -> UnitPoint {
+        return UnitPoint(x: fill.centerX ?? 0.5, y: fill.centerY ?? 0.5)
     }
 }
