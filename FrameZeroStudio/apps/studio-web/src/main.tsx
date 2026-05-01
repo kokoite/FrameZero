@@ -9,6 +9,7 @@ import {
 } from "@framezero/compiler";
 import { orbPlaygroundProject } from "@framezero/fixtures";
 import type { MotionAction, MotionAssignment, MotionFill, MotionPropertySelector, MotionRule, MotionSpec, MotionValue } from "@framezero/schema";
+import { findComponentInstanceRoot, isDescendantOf } from "./componentSelection";
 import "./styles.css";
 
 type TargetMode = "selected" | "role";
@@ -138,6 +139,7 @@ const previewBackgroundOptions: ReadonlyArray<{ id: CanvasPreviewBackground; lab
 function App() {
   const [project, setProject] = useState<StudioProject>(() => loadStoredProject());
   const [selectedNodeId, setSelectedNodeId] = useState(project.editor?.selection[0] ?? "");
+  const [drilledNodeId, setDrilledNodeId] = useState<string | null>(null);
   const [selectedPhaseId, setSelectedPhaseId] = useState(project.phaseOrder[0] ?? "");
   const [targetMode, setTargetMode] = useState<TargetMode>("selected");
   const [sendState, setSendState] = useState<SendState>("idle");
@@ -188,6 +190,12 @@ function App() {
             ? "warning"
             : "";
   const componentSearchResults = componentLibraryItems(project, componentSearch);
+
+  useEffect(() => {
+    if (drilledNodeId && !project.nodes[drilledNodeId]) {
+      setDrilledNodeId(null);
+    }
+  }, [project.nodes, drilledNodeId]);
   const designCodePanel = buildDesignCodePanel(
     project,
     selectedNode,
@@ -973,6 +981,7 @@ function App() {
 
   function clearCanvasSelection() {
     setSelectedNodeId("");
+    setDrilledNodeId(null);
     setSelectedComponentId("");
     setSelectedAsset(undefined);
     patchProject((draft) => {
@@ -1018,17 +1027,30 @@ function App() {
     setPreviewTime(clamp(value, 0, previewPlan.totalDuration));
   }
 
+  // In Animate mode, when drilled into a child, drag of that child writes the phase
+  // target for the child (NOT the instance root). This is intentional — drill is a
+  // design-time affordance to mutate a specific layer of an instance.
+  const resolveCanvasTargetId = (rawId: string): string => {
+    const root = findComponentInstanceRoot(project, rawId);
+    if (!root) return rawId;
+    if (drilledNodeId && (drilledNodeId === rawId || isDescendantOf(project, rawId, drilledNodeId))) {
+      return rawId;
+    }
+    return root;
+  };
+
   function startCanvasDrag(nodeId: string, event: React.PointerEvent<HTMLDivElement>) {
     const canvas = event.currentTarget.closest(".phone-canvas");
     if (!(canvas instanceof HTMLElement)) return;
     const canvasElement = canvas;
+    const targetId = resolveCanvasTargetId(nodeId);
 
     const node = project.nodes[nodeId];
     if (!node || node.id === project.rootNodeId) return;
     const dragMode = workspaceMode;
     const phaseIdForDrag = selectedPhaseId;
 
-    setSelectedNodeId(nodeId);
+    setSelectedNodeId(targetId);
     setSelectedComponentId("");
     setSelectedAsset(undefined);
     setIsPreviewing(false);
@@ -1053,22 +1075,22 @@ function App() {
 
       setProject((current) => {
         const draft = cloneProject(current);
-        const movingNode = draft.nodes[nodeId];
+        const movingNode = draft.nodes[targetId];
         if (!movingNode) return current;
 
         if (dragMode === "animate" && phaseIdForDrag !== "") {
           const phase = draft.phases[phaseIdForDrag];
           if (phase) {
-            setPhaseTargetValue(phase, { id: nodeId, properties: ["offset.x"] }, nextX);
-            setPhaseTargetValue(phase, { id: nodeId, properties: ["offset.y"] }, nextY);
-            ensureRuleCovers(phase, { id: nodeId, properties: ["offset.x", "offset.y"] }, "offset.x");
-            ensureRuleCovers(phase, { id: nodeId, properties: ["offset.x", "offset.y"] }, "offset.y");
+            setPhaseTargetValue(phase, { id: targetId, properties: ["offset.x"] }, nextX);
+            setPhaseTargetValue(phase, { id: targetId, properties: ["offset.y"] }, nextY);
+            ensureRuleCovers(phase, { id: targetId, properties: ["offset.x", "offset.y"] }, "offset.x");
+            ensureRuleCovers(phase, { id: targetId, properties: ["offset.x", "offset.y"] }, "offset.y");
           }
         } else {
           movingNode.presentation["offset.x"] = nextX;
           movingNode.presentation["offset.y"] = nextY;
         }
-        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [nodeId] };
+        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [targetId] };
         saveStoredProject(draft);
         return draft;
       });
@@ -1088,6 +1110,7 @@ function App() {
   function startCanvasResize(nodeId: string, corner: ResizeCorner, event: React.PointerEvent<HTMLElement>) {
     const canvas = event.currentTarget.closest(".phone-canvas");
     if (!(canvas instanceof HTMLElement)) return;
+    const targetId = resolveCanvasTargetId(nodeId);
 
     const node = project.nodes[nodeId];
     if (!node || node.id === project.rootNodeId) return;
@@ -1100,7 +1123,7 @@ function App() {
       y: numberValue(node.presentation["offset.y"])
     };
 
-    setSelectedNodeId(nodeId);
+    setSelectedNodeId(targetId);
     setSelectedComponentId("");
     setSelectedAsset(undefined);
     event.preventDefault();
@@ -1121,13 +1144,13 @@ function App() {
 
       setProject((current) => {
         const draft = cloneProject(current);
-        const resizingNode = draft.nodes[nodeId];
+        const resizingNode = draft.nodes[targetId];
         if (!resizingNode) return current;
         resizingNode.layout.width = nextWidth;
         resizingNode.layout.height = nextHeight;
         resizingNode.presentation["offset.x"] = round(startOffset.x + centerShiftX);
         resizingNode.presentation["offset.y"] = round(startOffset.y + centerShiftY);
-        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [nodeId] };
+        draft.editor = { viewportPreset: draft.editor?.viewportPreset ?? "iphone", ...draft.editor, selection: [targetId] };
         saveStoredProject(draft);
         return draft;
       });
@@ -2123,6 +2146,15 @@ function App() {
           suppressSurface={ancestorHasSemanticPreview}
           {...(useSemanticPreview ? { semanticPreview: <SemanticSvgPreview project={project} rootId={node.id} focusNodeId={focusedLayerId} /> } : {})}
           onPointerDown={(event) => startCanvasDrag(node.id, event)}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const root = findComponentInstanceRoot(project, node.id);
+            if (root && root !== node.id) {
+              setDrilledNodeId(node.id);
+              setSelectedNodeId(node.id);
+            }
+          }}
           onResizeStart={(corner, event) => startCanvasResize(node.id, corner, event)}
           {...(previewFrame.transforms[node.id] ? { previewTransform: previewFrame.transforms[node.id] } : {})}
           {...(workspaceMode === "animate" && selectedPhase ? { phaseTargets: readPhaseTargets(selectedPhase, node, targetMode) } : {})}
@@ -2943,6 +2975,7 @@ function CanvasNode({
   phaseTargets,
   previewTransform,
   onPointerDown,
+  onDoubleClick,
   onResizeStart
 }: {
   node: StudioNode;
@@ -2954,6 +2987,7 @@ function CanvasNode({
   phaseTargets?: ReturnType<typeof defaultPhaseTargets>;
   previewTransform?: PreviewTransform | undefined;
   onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onDoubleClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onResizeStart?: (corner: ResizeCorner, event: React.PointerEvent<HTMLElement>) => void;
 }) {
   const originX = numberValue(node.presentation["offset.x"]);
@@ -3007,6 +3041,7 @@ function CanvasNode({
       data-roles={node.roles.join(" ")}
       style={style}
       onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
     >
       <span className="node-hit-target" aria-hidden="true" />
       <span className={node.style.clip === true ? "node-clip clipped" : "node-clip"}>
