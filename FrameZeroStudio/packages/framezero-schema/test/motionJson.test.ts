@@ -95,9 +95,161 @@ describe("motionDocumentSchema", () => {
             ],
             centerX: 0.35,
             centerY: 0.28,
+            gradientTransform: [0, 308.67, -591.426, -2.6306, 245.55, -13.9789],
             radius: 88
           }],
           presentation: {},
+          children: []
+        }
+      ],
+      machines: [],
+      triggers: [],
+      dragBindings: [],
+      bodies: [],
+      forces: []
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects image nodes unless they are explicit locked assets", () => {
+    const result = safeParseMotionDocument({
+      schemaVersion: 1,
+      root: "frame",
+      nodes: [
+        {
+          id: "frame",
+          kind: "zstack",
+          roles: [],
+          layout: {},
+          style: {},
+          presentation: {},
+          children: ["glow"]
+        },
+        {
+          id: "glow",
+          kind: "image",
+          roles: [],
+          layout: { width: 250, height: 240 },
+          style: { imageUrl: "/figma/voice/planet-3.svg", contentMode: "100% 100%" },
+          presentation: {},
+          children: []
+        }
+      ],
+      machines: [],
+      triggers: [],
+      dragBindings: [],
+      bodies: [],
+      forces: []
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts layered locked image nodes with clip and blend metadata", () => {
+    const result = safeParseMotionDocument({
+      schemaVersion: 1,
+      root: "frame",
+      nodes: [
+        {
+          id: "frame",
+          kind: "zstack",
+          roles: ["voiceGradient"],
+          layout: { width: 375, height: 248 },
+          style: { clip: true },
+          presentation: { "offset.x": 0, "offset.y": 0, opacity: 1, scale: 1, rotation: 0 },
+          children: ["glow"]
+        },
+        {
+          id: "glow",
+          kind: "image",
+          roles: ["voiceGradient"],
+          layout: { width: 250, height: 240 },
+          style: { assetPolicy: "locked", imageUrl: "/figma/voice/planet-3.svg", contentMode: "100% 100%", blendMode: "screen" },
+          presentation: { "offset.x": -0.5, "offset.y": 28, opacity: 0.8, scale: 1, "scale.y": -1, rotation: 0 },
+          children: []
+        }
+      ],
+      machines: [],
+      triggers: [],
+      dragBindings: [],
+      bodies: [],
+      forces: []
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects image particles unless they are explicit locked assets", () => {
+    const result = safeParseMotionDocument({
+      schemaVersion: 1,
+      root: "screen",
+      nodes: [
+        { id: "screen", kind: "zstack", roles: ["screen"], layout: {}, style: {}, presentation: {}, children: [] }
+      ],
+      machines: [
+        {
+          id: "main",
+          initial: "idle",
+          states: [{ id: "idle", values: [] }, { id: "active", values: [] }],
+          transitions: [
+            {
+              id: "burst",
+              from: "idle",
+              to: "active",
+              trigger: "after",
+              rules: [],
+              arcs: [],
+              jiggles: [],
+              actions: [
+                {
+                  type: "emitParticles",
+                  id: "imageBurst",
+                  count: 1,
+                  particle: {
+                    kind: "image",
+                    layout: { width: 20, height: 20 },
+                    style: { imageUrl: "/asset.png" },
+                    from: { opacity: 1 },
+                    to: { opacity: 0 },
+                    motion: { type: "timed", duration: 0.2 },
+                    lifetime: 0.3
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      triggers: [{ id: "after", type: "after" }],
+      dragBindings: [],
+      bodies: [],
+      forces: []
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts vector path nodes with viewbox and effects metadata", () => {
+    const result = safeParseMotionDocument({
+      schemaVersion: 1,
+      root: "blob",
+      nodes: [
+        {
+          id: "blob",
+          kind: "path",
+          roles: ["voiceGradient"],
+          layout: { width: 94.147, height: 120.008 },
+          style: {
+            backgroundColor: "#8320DA",
+            pathData: "M 94.1469 34.4752 C 94.1469 53.5153 51.0265 120.0085 25.0298 120.0085 Z",
+            viewBoxWidth: 94.147,
+            viewBoxHeight: 120.008,
+            blur: 50,
+            blendMode: "plusLighter"
+          },
+          fills: [{ type: "solid", color: "#8320DA", opacity: 1 }],
+          presentation: { "offset.x": -150.36, "offset.y": 7.06, opacity: 0.35, scale: 1, "scale.y": -1, rotation: -75 },
           children: []
         }
       ],

@@ -28,6 +28,25 @@ describe("compileStudioProject", () => {
     });
   });
 
+  it("drops role-based motion selectors that no longer match live nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    for (const node of Object.values(project.nodes)) {
+      node.roles = node.roles.filter((role) => role !== "gesturePart");
+    }
+
+    const result = compileStudioProject(project);
+    const state = result.document.machines[0]?.states[1];
+    const transition = result.document.machines[0]?.transitions[0];
+
+    expect(state?.values).not.toContainEqual({
+      select: { role: "gesturePart", properties: ["offset.x"] },
+      value: 64
+    });
+    expect(transition?.rules).not.toContainEqual(expect.objectContaining({
+      select: expect.objectContaining({ role: "gesturePart" })
+    }));
+  });
+
   it("preserves structured fills on compiled nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.fills = [{
@@ -55,6 +74,41 @@ describe("compileStudioProject", () => {
 
     expect(card).toBeDefined();
     expect(JSON.stringify(card)).not.toContain("componentId");
+  });
+
+  it("preserves nested locked image component layers in runtime JSON", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.screen.childIds = ["card", "title"];
+    project.nodes.card.kind = "zstack";
+    project.nodes.card.layout = { width: 375, height: 248 };
+    project.nodes.card.style = { clip: true };
+    project.nodes.card.childIds = ["icon", "glow"];
+    project.nodes.icon.parentId = "card";
+    project.nodes.glow = {
+      id: "glow",
+      name: "Glow Asset",
+      kind: "image",
+      parentId: "card",
+      childIds: [],
+      roles: ["gesturePart"],
+      layout: { width: 250, height: 240 },
+      style: { assetPolicy: "locked", imageUrl: "/figma/voice/planet-3.svg", contentMode: "100% 100%", blendMode: "screen" },
+      fills: [],
+      presentation: { "offset.x": 0, "offset.y": 0, scale: 1, opacity: 0.8, rotation: 0 }
+    };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+    const glow = result.document.nodes.find((node) => node.id === "glow");
+
+    expect(card?.children).toEqual(["icon", "glow"]);
+    expect(card?.style.clip).toBe(true);
+    expect(glow?.kind).toBe("image");
+    expect(glow?.style).toMatchObject({
+      assetPolicy: "locked",
+      imageUrl: "/figma/voice/planet-3.svg",
+      blendMode: "screen"
+    });
   });
 
   it("produces deterministic JSON", () => {
