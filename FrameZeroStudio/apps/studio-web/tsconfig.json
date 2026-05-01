@@ -8,7 +8,9 @@
   "references": [
     { "path": "../../packages/framezero-schema" },
     { "path": "../../packages/framezero-compiler" },
-    { "path": "../../packages/framezero-fixtures" }
+    { "path": "../../packages/framezero-fixtures" },
+    { "path": "../../packages/framezero-runtime" },
+    { "path": "../../packages/framezero-web-renderer" }
   ],
   "include": ["src", "vite.config.ts"]
 }

@@ -10,6 +10,7 @@ import {
 import { orbPlaygroundProject } from "@framezero/fixtures";
 import type { MotionAction, MotionAssignment, MotionFill, MotionPropertySelector, MotionRule, MotionSpec, MotionValue } from "@framezero/schema";
 import { findComponentInstanceRoot, isDescendantOf } from "./componentSelection";
+import { isMotionRendererEnabled, MotionPreview } from "./MotionPreview";
 import "./styles.css";
 
 type TargetMode = "selected" | "role";
@@ -135,6 +136,10 @@ const previewBackgroundOptions: ReadonlyArray<{ id: CanvasPreviewBackground; lab
   { id: "black", label: "Black" },
   { id: "white", label: "White" }
 ] as const;
+const MOTION_RENDERER_ENABLED: boolean = isMotionRendererEnabled(
+  window.location.search,
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FRAMEZERO_RENDERER
+);
 
 function App() {
   const [project, setProject] = useState<StudioProject>(() => loadStoredProject());
@@ -1685,37 +1690,45 @@ function App() {
             </div>
           </div>
         ) : (
-        <div className="canvas-frame">
-          <div
-            className="phone-canvas"
-            onPointerDown={(event) => {
-              const target = event.target;
-              if (target instanceof HTMLElement && target.closest(".canvas-node")) return;
-              clearCanvasSelection();
-            }}
-            style={{
-              ...previewBackgroundStyle,
-              transform: `translate(${previewFrame.shake.x}px, ${previewFrame.shake.y}px)`
-            }}
-          >
-            <div className="grid" />
-            <div className="axis x-axis" />
-            <div className="axis y-axis" />
-            <span className="artboard-label">{canvasWidth} × {canvasHeight}</span>
-            <div className="ruler ruler-top" aria-hidden="true">
-              {rulerTicks(canvasWidth).map((tick) => <span key={tick} style={{ left: `${(tick / canvasWidth) * 100}%` }}>{tick}</span>)}
+        MOTION_RENDERER_ENABLED ? (
+          <MotionPreview
+            document={compileResult.ok ? compileResult.value.document : null}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+          />
+        ) : (
+          <div className="canvas-frame">
+            <div
+              className="phone-canvas"
+              onPointerDown={(event) => {
+                const target = event.target;
+                if (target instanceof HTMLElement && target.closest(".canvas-node")) return;
+                clearCanvasSelection();
+              }}
+              style={{
+                ...previewBackgroundStyle,
+                transform: `translate(${previewFrame.shake.x}px, ${previewFrame.shake.y}px)`
+              }}
+            >
+              <div className="grid" />
+              <div className="axis x-axis" />
+              <div className="axis y-axis" />
+              <span className="artboard-label">{canvasWidth} × {canvasHeight}</span>
+              <div className="ruler ruler-top" aria-hidden="true">
+                {rulerTicks(canvasWidth).map((tick) => <span key={tick} style={{ left: `${(tick / canvasWidth) * 100}%` }}>{tick}</span>)}
+              </div>
+              <div className="ruler ruler-left" aria-hidden="true">
+                {rulerTicks(canvasHeight).map((tick) => <span key={tick} style={{ top: `${(tick / canvasHeight) * 100}%` }}>{tick}</span>)}
+              </div>
+              <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
+              {renderCanvasChildren(project.rootNodeId, canvasCenter)}
+              {previewFrame.visuals.map((visual) => (
+                <PreviewVisualNode visual={visual} key={visual.id} />
+              ))}
+              {workspaceMode === "animate" && selectedPhase ? <MotionGuide phase={selectedPhase} node={selectedNode} targetMode={targetMode} /> : null}
             </div>
-            <div className="ruler ruler-left" aria-hidden="true">
-              {rulerTicks(canvasHeight).map((tick) => <span key={tick} style={{ top: `${(tick / canvasHeight) * 100}%` }}>{tick}</span>)}
-            </div>
-            <div className="canvas-help">Drag selected layers. Pull corner handles to resize.</div>
-            {renderCanvasChildren(project.rootNodeId, canvasCenter)}
-            {previewFrame.visuals.map((visual) => (
-              <PreviewVisualNode visual={visual} key={visual.id} />
-            ))}
-            {workspaceMode === "animate" && selectedPhase ? <MotionGuide phase={selectedPhase} node={selectedNode} targetMode={targetMode} /> : null}
           </div>
-        </div>
+        )
         )}
       </section>
 
