@@ -725,8 +725,6 @@ struct MotionPointValue: Decodable {
     let y: MotionValue
 }
 
-// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
-// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrailSpec: Decodable {
     let color: String?
     let width: Double?
@@ -744,10 +742,47 @@ struct MotionTrailSpec: Decodable {
     let glowStrokeWidthBase: Double?
     let glowStrokeWidthRange: Double?
     let glowInnerScale: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case color
+        case width
+        case maxWidth
+        case forkSpacing
+        case chargeCurve
+        case opacityBase
+        case opacityRange
+        case glowBaseSize
+        case glowGrowth
+        case glowFillOpacityBase
+        case glowFillOpacityRange
+        case glowStrokeOpacityBase
+        case glowStrokeOpacityRange
+        case glowStrokeWidthBase
+        case glowStrokeWidthRange
+        case glowInnerScale
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decodeIfPresent(String.self, forKey: .color)
+        width = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .width)
+        maxWidth = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .maxWidth)
+        forkSpacing = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .forkSpacing)
+        chargeCurve = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .chargeCurve)
+        opacityBase = try container.decodeUnitIntervalIfPresent(forKey: .opacityBase)
+        opacityRange = try container.decodeFiniteDoubleIfPresent(forKey: .opacityRange)
+        glowBaseSize = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .glowBaseSize)
+        glowGrowth = try container.decodeFiniteDoubleIfPresent(forKey: .glowGrowth)
+        glowFillOpacityBase = try container.decodeUnitIntervalIfPresent(forKey: .glowFillOpacityBase)
+        glowFillOpacityRange = try container.decodeFiniteDoubleIfPresent(forKey: .glowFillOpacityRange)
+        glowStrokeOpacityBase = try container.decodeUnitIntervalIfPresent(forKey: .glowStrokeOpacityBase)
+        glowStrokeOpacityRange = try container.decodeFiniteDoubleIfPresent(forKey: .glowStrokeOpacityRange)
+        glowStrokeWidthBase = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .glowStrokeWidthBase)
+        glowStrokeWidthRange = try container.decodeFiniteDoubleIfPresent(forKey: .glowStrokeWidthRange)
+        glowInnerScale = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .glowInnerScale)
+    }
 }
 
-// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
-// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrajectorySpec: Decodable {
     let color: String?
     let points: Int?
@@ -761,6 +796,37 @@ struct MotionTrajectorySpec: Decodable {
     let opacityBase: Double?
     let opacityRange: Double?
     let opacityMinFade: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case color
+        case points
+        case step
+        case chargeCurve
+        case pointCountBaseFactor
+        case pointCountChargeFactor
+        case sizeBase
+        case sizeRange
+        case minFade
+        case opacityBase
+        case opacityRange
+        case opacityMinFade
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decodeIfPresent(String.self, forKey: .color)
+        points = try container.decodeIfPresent(Int.self, forKey: .points)
+        step = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .step)
+        chargeCurve = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .chargeCurve)
+        pointCountBaseFactor = try container.decodeFiniteDoubleIfPresent(forKey: .pointCountBaseFactor)
+        pointCountChargeFactor = try container.decodeFiniteDoubleIfPresent(forKey: .pointCountChargeFactor)
+        sizeBase = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .sizeBase)
+        sizeRange = try container.decodeFiniteDoubleIfPresent(forKey: .sizeRange)
+        minFade = try container.decodeUnitIntervalIfPresent(forKey: .minFade)
+        opacityBase = try container.decodeUnitIntervalIfPresent(forKey: .opacityBase)
+        opacityRange = try container.decodeFiniteDoubleIfPresent(forKey: .opacityRange)
+        opacityMinFade = try container.decodeUnitIntervalIfPresent(forKey: .opacityMinFade)
+    }
 }
 
 enum MotionSpec: Decodable, Equatable {

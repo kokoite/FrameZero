@@ -53,6 +53,74 @@ final class MotionSchemaBoundsTests: XCTestCase {
         XCTAssertThrowsError(try dec.decode(SpringSpec.self, from: data(springJSON(damping: "-0.1"))))
     }
 
+    // MARK: - Trail bounds (MotionTrailSpec)
+
+    private func trailJSON(_ body: String) -> String {
+        return "{\(body)}"
+    }
+
+    func testTrailOpacityBaseRejectsOutOfBounds() {
+        XCTAssertThrowsError(try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""opacityBase":-0.1"#))))
+        XCTAssertThrowsError(try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""opacityBase":1.1"#))))
+    }
+
+    func testTrailOpacityBaseAcceptsUnitIntervalValue() throws {
+        let trail = try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""opacityBase":0.5"#)))
+        XCTAssertEqual(trail.opacityBase, 0.5)
+    }
+
+    func testTrailOpacityRangeAcceptsNegativeDelta() throws {
+        let trail = try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""opacityRange":-0.5"#)))
+        XCTAssertEqual(trail.opacityRange, -0.5)
+    }
+
+    func testTrailWidthRejectsNegative() {
+        XCTAssertThrowsError(try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""width":-1"#))))
+    }
+
+    func testTrailWidthAcceptsNonNegativeValues() throws {
+        let zero = try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""width":0.0"#)))
+        XCTAssertEqual(zero.width, 0.0)
+
+        let positive = try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""width":5.0"#)))
+        XCTAssertEqual(positive.width, 5.0)
+    }
+
+    func testTrailWidthRejectsNaN() {
+        let encoder = JSONEncoder()
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "+Inf", negativeInfinity: "-Inf", nan: "NaN")
+        struct W: Encodable { let width: Double }
+        let raw = try! encoder.encode(W(width: .nan))
+        XCTAssertThrowsError(try dec.decode(MotionTrailSpec.self, from: raw))
+    }
+
+    func testTrailGlowFillOpacityBaseRejectsAboveOne() {
+        XCTAssertThrowsError(try dec.decode(MotionTrailSpec.self, from: data(trailJSON(#""glowFillOpacityBase":1.5"#))))
+    }
+
+    // MARK: - Trajectory bounds (MotionTrajectorySpec)
+
+    private func trajectoryJSON(_ body: String) -> String {
+        return "{\(body)}"
+    }
+
+    func testTrajectoryOpacityBaseRejectsAboveOne() {
+        XCTAssertThrowsError(try dec.decode(MotionTrajectorySpec.self, from: data(trajectoryJSON(#""opacityBase":1.1"#))))
+    }
+
+    func testTrajectoryMinFadeRejectsNegative() {
+        XCTAssertThrowsError(try dec.decode(MotionTrajectorySpec.self, from: data(trajectoryJSON(#""minFade":-0.01"#))))
+    }
+
+    func testTrajectorySizeBaseRejectsNegative() {
+        XCTAssertThrowsError(try dec.decode(MotionTrajectorySpec.self, from: data(trajectoryJSON(#""sizeBase":-1"#))))
+    }
+
+    func testTrajectoryPointCountBaseFactorAcceptsNegativeMultiplier() throws {
+        let trajectory = try dec.decode(MotionTrajectorySpec.self, from: data(trajectoryJSON(#""pointCountBaseFactor":-2"#)))
+        XCTAssertEqual(trajectory.pointCountBaseFactor, -2)
+    }
+
     // MARK: - Regression: existing fixtures still load
 
     func testExistingValidFixturesStillLoad() throws {
