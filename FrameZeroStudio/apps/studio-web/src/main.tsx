@@ -2054,7 +2054,7 @@ function App() {
                 <NumberField label="Y" value={nodeFrameY(selectedNode)} onChange={(value) => updateSelectedNode((node) => { setNodeFrameY(node, value); })} />
                 <NumberField label="W" value={nodeWidth(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.width = value; })} />
                 <NumberField label="H" value={nodeHeight(selectedNode)} onChange={(value) => updateSelectedNode((node) => { node.layout.height = value; })} />
-                <NumberField label="Op" value={numberValue(selectedNode.presentation.opacity, 1)} step={0.05} onChange={(value) => updateSelectedNode((node) => { node.presentation.opacity = clamp(value, 0, 1); })} />
+                <NumberField label="Opacity" value={numberValue(selectedNode.presentation.opacity, 1)} step={0.05} onChange={(value) => updateSelectedNode((node) => { node.presentation.opacity = clamp(value, 0, 1); })} />
               </div>
             ) : (
               <div className="status-metrics">
