@@ -119,16 +119,12 @@ struct MotionFill: Decodable, Equatable {
         centerY = try container.decodeFiniteDoubleIfPresent(forKey: .centerY)
         radius = try container.decodeFinitePositiveDoubleIfPresent(forKey: .radius)
         gradientTransform = try container.decodeIfPresent([Double].self, forKey: .gradientTransform)
-        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+        opacity = try container.decodeUnitIntervalIfPresent(forKey: .opacity)
 
         if let gradientTransform {
             guard gradientTransform.count == 6, gradientTransform.allSatisfy(\.isFinite) else {
                 throw DecodingError.dataCorruptedError(forKey: .gradientTransform, in: container, debugDescription: "Gradient transform must contain six finite numbers")
             }
-        }
-
-        if let opacity, opacity > 1 {
-            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Fill opacity must be between 0 and 1")
         }
 
         switch type {
@@ -165,13 +161,10 @@ struct MotionColorStop: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         color = try container.decode(String.self, forKey: .color)
         position = try container.decodeFiniteDouble(forKey: .position)
-        opacity = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .opacity)
+        opacity = try container.decodeUnitIntervalIfPresent(forKey: .opacity)
 
         if position < 0 || position > 1 {
             throw DecodingError.dataCorruptedError(forKey: .position, in: container, debugDescription: "Color stop position must be between 0 and 1")
-        }
-        if let opacity, opacity > 1 {
-            throw DecodingError.dataCorruptedError(forKey: .opacity, in: container, debugDescription: "Color stop opacity must be between 0 and 1")
         }
     }
 }
@@ -732,6 +725,8 @@ struct MotionPointValue: Decodable {
     let y: MotionValue
 }
 
+// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
+// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrailSpec: Decodable {
     let color: String?
     let width: Double?
@@ -751,6 +746,8 @@ struct MotionTrailSpec: Decodable {
     let glowInnerScale: Double?
 }
 
+// TODO(B0.1 follow-up): route opacityBase through decodeUnitIntervalIfPresent;
+// opacityRange is a delta and can legally be negative — handle in a separate commit.
 struct MotionTrajectorySpec: Decodable {
     let color: String?
     let points: Int?
@@ -800,6 +797,21 @@ struct SpringSpec: Decodable, Equatable {
     let type: String
     let response: Double
     let dampingFraction: Double
+}
+
+extension SpringSpec {
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case response
+        case dampingFraction
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        response = try container.decodeFinitePositiveDouble(forKey: .response)
+        dampingFraction = try container.decodeOpenUnitInterval(forKey: .dampingFraction)
+    }
 }
 
 struct TimedSpec: Decodable, Equatable {
@@ -883,7 +895,7 @@ enum MotionMetric: String, Decodable, Equatable {
 
 struct MotionIgnoredRule: Decodable {}
 
-private extension KeyedDecodingContainer {
+internal extension KeyedDecodingContainer {
     func decodeFiniteDouble(forKey key: Key) throws -> Double {
         let value = try decode(Double.self, forKey: key)
         if !value.isFinite {
@@ -949,6 +961,60 @@ private extension KeyedDecodingContainer {
 
         try validateFiniteNonNegative(value, forKey: key)
         return value
+    }
+
+    func decodeFiniteBoundedDouble(forKey key: Key, min: Double, max: Double) throws -> Double {
+        let value = try decode(Double.self, forKey: key)
+        try validateFiniteBounded(value, forKey: key, min: min, max: max)
+        return value
+    }
+
+    func decodeFiniteBoundedDoubleIfPresent(forKey key: Key, min: Double, max: Double) throws -> Double? {
+        guard let value = try decodeIfPresent(Double.self, forKey: key) else { return nil }
+        try validateFiniteBounded(value, forKey: key, min: min, max: max)
+        return value
+    }
+
+    func decodeUnitInterval(forKey key: Key) throws -> Double {
+        return try decodeFiniteBoundedDouble(forKey: key, min: 0, max: 1)
+    }
+
+    func decodeUnitIntervalIfPresent(forKey key: Key) throws -> Double? {
+        return try decodeFiniteBoundedDoubleIfPresent(forKey: key, min: 0, max: 1)
+    }
+
+    func decodeOpenUnitInterval(forKey key: Key) throws -> Double {
+        let value = try decode(Double.self, forKey: key)
+        if !value.isFinite || value <= 0 || value > 1 {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "\(key.stringValue) must be finite and within (0, 1]"
+            )
+        }
+        return value
+    }
+
+    func decodeOpenUnitIntervalIfPresent(forKey key: Key) throws -> Double? {
+        guard let value = try decodeIfPresent(Double.self, forKey: key) else { return nil }
+        if !value.isFinite || value <= 0 || value > 1 {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "\(key.stringValue) must be finite and within (0, 1]"
+            )
+        }
+        return value
+    }
+
+    private func validateFiniteBounded(_ value: Double, forKey key: Key, min: Double, max: Double) throws {
+        if !value.isFinite || value < min || value > max {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: self,
+                debugDescription: "\(key.stringValue) must be finite and within [\(min), \(max)]"
+            )
+        }
     }
 
     private func validateFiniteNonNegative(_ value: Double, forKey key: Key) throws {
