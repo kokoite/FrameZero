@@ -1949,10 +1949,10 @@ function App() {
               </div>
               <NumberField label="Start Delay" value={selectedPhase.startDelay} step={0.05} onChange={(value) => updateSelectedPhase((phase) => { phase.startDelay = value; })} />
               <div className="field-block field-wide">
-                <span>Next Phase</span>
-                <div className="segmented-row compact two-up">
-                  <button type="button" className={selectedPhase.nextMode === "atTime" ? "segment active" : "segment"} aria-pressed={selectedPhase.nextMode === "atTime"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "atTime"; if (phase.nextAt == null) phase.nextAt = 1; })}>At Time</button>
-                  <button type="button" className={selectedPhase.nextMode === "afterPreviousSettles" ? "segment active" : "segment"} aria-pressed={selectedPhase.nextMode === "afterPreviousSettles"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "afterPreviousSettles"; phase.nextAt = null; })}>After Settle</button>
+                <span id="next-phase-label">Next Phase</span>
+                <div className="segmented-row compact two-up" role="radiogroup" aria-labelledby="next-phase-label">
+                  <button type="button" role="radio" className={selectedPhase.nextMode === "atTime" ? "segment active" : "segment"} aria-checked={selectedPhase.nextMode === "atTime"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "atTime"; if (phase.nextAt == null) phase.nextAt = 1; })}>At Time</button>
+                  <button type="button" role="radio" className={selectedPhase.nextMode === "afterPreviousSettles" ? "segment active" : "segment"} aria-checked={selectedPhase.nextMode === "afterPreviousSettles"} onClick={() => updateSelectedPhase((phase) => { phase.nextMode = "afterPreviousSettles"; phase.nextAt = null; })}>After Settle</button>
                 </div>
               </div>
               {selectedPhase.nextMode === "atTime" ? (
