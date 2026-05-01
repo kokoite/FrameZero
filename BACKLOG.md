@@ -20,7 +20,7 @@ Single-source-of-truth for what's queued. Update status as items move through th
 
 | ID | Status | P | Item | Depends on | Notes |
 |----|--------|---|------|------------|-------|
-| 7b | queued | P0 | Web renderer Phase 7b — drag bindings (slingshot interaction layer) | — | Snap-back only in v1; projectile flight (gravity / collision / restitution / friction) split out as 7c. ~150 LoC port from `MotionEngine.swift:585-678`. Required for `ReactiveCard.motion.json` parity. |
+| 7b | shipped | P0 | Web renderer Phase 7b — drag bindings (slingshot interaction layer) | — | `8d14d0c` Snap-back only; projectile flight is 7c. handleDragChanged + handleDragEnded with pull-clamp + charge feedback + 5-channel snap-back springs. 16 runtime tests (was 9, +7 drag). |
 | 7c | queued | P0 | Web renderer Phase 7c — projectile physics + automatic/after triggers | 7b | ActiveProjectile state + tick integration (gravity, air resistance, collision, restitution, friction, stopSpeed). Plus tick-driven dispatch for `automatic` and `after` triggers (idle elapsed, transition.delay). ~250 LoC port from `MotionEngine.swift` projectile section. |
 | 8 | queued | P0 | Web renderer Phase 8 — Studio editor cutover behind a flag | 7b, 7c | Replace `apps/studio-web/src/main.tsx` advisory canvas with `MotionCanvasRenderer`. Feature-flag (env var or query param) so advisory canvas stays available for one release. |
 | demo-bug | queued | P1 | Fix polygon/star positioning in `web-renderer-demo.ts` gallery | — | Polygon + star render fine in unit tests but visually misplaced in the demo doc. ~30 min debug; likely a layout-pass / center-pivot interaction. |
