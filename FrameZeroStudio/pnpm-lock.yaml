@@ -57,9 +57,15 @@ importers:
       '@framezero/fixtures':
         specifier: workspace:*
         version: link:../../packages/framezero-fixtures
+      '@framezero/runtime':
+        specifier: workspace:*
+        version: link:../../packages/framezero-runtime
       '@framezero/schema':
         specifier: workspace:*
         version: link:../../packages/framezero-schema
+      '@framezero/web-renderer':
+        specifier: workspace:*
+        version: link:../../packages/framezero-web-renderer
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(vite@7.3.2(@types/node@25.6.0)(tsx@4.21.0))

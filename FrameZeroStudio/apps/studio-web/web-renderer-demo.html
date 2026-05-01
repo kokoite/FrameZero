@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FrameZero Web Renderer — Phase 1-7a Demo</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #070a12;
+        color: #e2e8f0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        padding: 24px;
+        min-height: 100vh;
+      }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      h2 { font-size: 14px; margin: 24px 0 8px; color: #94a3b8; font-weight: 500; }
+      .subtitle { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
+      .row {
+        display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;
+      }
+      .stage {
+        background: #0d1320; border-radius: 16px; padding: 16px;
+        border: 1px solid rgba(255,255,255,0.05);
+      }
+      .stage canvas { display: block; cursor: pointer; border-radius: 12px; background: #050a14; }
+      .stage .label { font-size: 12px; color: #64748b; margin-top: 8px; }
+      button {
+        background: #1e293b; color: #e2e8f0; border: 1px solid rgba(255,255,255,0.08);
+        padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px;
+      }
+      button:hover { background: #2a3a55; }
+      .status { font-size: 12px; color: #64748b; margin-top: 8px; min-height: 1.2em; }
+      .features {
+        background: #0d1320; padding: 16px; border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.05);
+        font-size: 12px; line-height: 1.7;
+      }
+      .features code { color: #38bdf8; }
+      .pill { display: inline-block; background: #1e293b; color: #94a3b8; padding: 2px 8px; border-radius: 99px; font-size: 11px; margin-right: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>FrameZero Web Renderer</h1>
+    <p class="subtitle">
+      Live demo of <code>@framezero/web-renderer</code> Phases 1-7a — TS port of MotionEngine + Canvas2D rendering.
+      Click any stage to fire a tap trigger.
+    </p>
+
+    <h2>Stage 1 — Phase1Card fixture (full pipeline)</h2>
+    <div class="row">
+      <div class="stage">
+        <canvas id="canvas-phase1card" width="390" height="600" style="width:390px;height:600px"></canvas>
+        <div class="label">390 × 600 logical • DPR-aware • tap to trigger</div>
+        <div class="status" id="status-phase1card"></div>
+      </div>
+      <div class="features">
+        <h2 style="margin-top:0">Pipeline coverage</h2>
+        <span class="pill">Phase 1</span> Channel core (spring/timed/immediate)<br>
+        <span class="pill">Phase 2</span> Doc → channel resolver<br>
+        <span class="pill">Phase 3</span> ZStack/VStack/HStack/circle/roundedRectangle/text<br>
+        <span class="pill">Phase 4</span> Linear + radial gradients, typed strokes, per-corner radii<br>
+        <span class="pill">Phase 5</span> Drop + inner shadow, 18 blendModes, layerBlur<br>
+        <span class="pill">Phase 6</span> polygon, star, line<br>
+        <span class="pill">Phase 6b</span> SVG path tokenizer (M/L/C/Q/Z)<br>
+        <span class="pill">Phase 7a</span> Tap trigger dispatch
+      </div>
+    </div>
+
+    <h2>Stage 2 — Synthetic shape gallery (Phase 4-6 surface)</h2>
+    <div class="stage">
+      <canvas id="canvas-gallery" width="780" height="280" style="width:780px;height:280px"></canvas>
+      <div class="label">Polygon (5-gon, dashed stroke) • Star (8-pt, inner shadow) • Line (thick, dashed) • Path (custom) • RoundedRect (per-corner)</div>
+    </div>
+
+    <script type="module" src="/src/web-renderer-demo.ts"></script>
+  </body>
+</html>
