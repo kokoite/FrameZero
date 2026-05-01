@@ -16,6 +16,24 @@ struct MotionChannel {
     var animationElapsed: Double
 }
 
+public struct MotionChannelDebugSnapshot: Equatable, Hashable, Sendable {
+    public enum RuleKind: String, Sendable {
+        case spring
+        case timed
+        case immediate
+    }
+
+    public let nodeID: String
+    public let property: String
+    public let current: Double
+    public let velocity: Double
+    public let target: Double
+    public let rule: RuleKind
+    public let elapsed: Double
+    public let isSettled: Bool
+    public let isDragOverridden: Bool
+}
+
 struct PendingChannelTarget {
     let key: MotionChannelKey
     let target: Double
@@ -425,6 +443,36 @@ public final class MotionEngine {
 
     func number(for nodeID: NodeID, property: String, default defaultValue: Double) -> Double {
         channels[MotionChannelKey(nodeID: nodeID, property: property)]?.current ?? defaultValue
+    }
+
+    public func channelSnapshots() -> [MotionChannelDebugSnapshot] {
+        channels.map { key, ch in
+            let rule: MotionChannelDebugSnapshot.RuleKind = {
+                switch ch.motion {
+                case .spring:
+                    return .spring
+                case .timed:
+                    return .timed
+                case .immediate:
+                    return .immediate
+                }
+            }()
+            let dragged = activeGlobalDragNodeID == key.nodeID
+                || activeSlingshotDrags[key.nodeID] != nil
+
+            return MotionChannelDebugSnapshot(
+                nodeID: key.nodeID,
+                property: key.property,
+                current: ch.current,
+                velocity: ch.velocity,
+                target: ch.target,
+                rule: rule,
+                elapsed: ch.animationElapsed,
+                isSettled: ch.isSettled,
+                isDragOverridden: dragged
+            )
+        }
+        .sorted { ($0.nodeID, $0.property) < ($1.nodeID, $1.property) }
     }
 
     func layoutNumber(for node: MotionNode, _ property: String) -> Double? {
