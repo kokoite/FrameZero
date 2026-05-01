@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cornerRadiiSchema, documentUpdatePayloadSchema, linePointSchema, lineSpecSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, shadowSpecSchema, starSpecSchema, strokeSpecSchema } from "../src/index";
+import { blendModeSchema, cornerRadiiSchema, documentUpdatePayloadSchema, linePointSchema, lineSpecSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, shadowSpecSchema, starSpecSchema, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -766,6 +766,66 @@ describe("shadowSpecSchema and layerBlur", () => {
     expect(node.style.shadowBlur).toBe(12);
     expect(node.style.shadowOpacity).toBe(0.35);
     expect(node.style.shadowColor).toBe("#112233");
+  });
+});
+
+describe("blendModeSchema", () => {
+  const validBlendModes = [
+    "normal",
+    "multiply",
+    "screen",
+    "overlay",
+    "darken",
+    "lighten",
+    "colorDodge",
+    "colorBurn",
+    "softLight",
+    "hardLight",
+    "difference",
+    "exclusion",
+    "hue",
+    "saturation",
+    "color",
+    "luminosity",
+    "plusLighter",
+    "plusDarker"
+  ] as const;
+
+  it.each(validBlendModes)("accepts typed blend mode %s", (blendMode) => {
+    expect(blendModeSchema.parse(blendMode)).toBe(blendMode);
+  });
+
+  it("rejects unknown blend mode values", () => {
+    expect(blendModeSchema.safeParse("frobnicate").success).toBe(false);
+  });
+
+  it("rejects empty strings", () => {
+    expect(blendModeSchema.safeParse("").success).toBe(false);
+  });
+
+  it("rejects numbers", () => {
+    expect(blendModeSchema.safeParse(1).success).toBe(false);
+  });
+
+  it("keeps untyped style blendMode parseable", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      style: { blendMode: "screen" }
+    });
+
+    expect(node).not.toHaveProperty("blendMode");
+    expect(node.style.blendMode).toBe("screen");
+  });
+
+  it("accepts typed blendMode on motion nodes", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      blendMode: "luminosity"
+    });
+
+    expect(node.blendMode).toBe("luminosity");
   });
 });
 

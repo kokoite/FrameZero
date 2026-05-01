@@ -135,6 +135,24 @@ describe("compileStudioProject", () => {
     expect(result.json).not.toContain('"layerBlur"');
   });
 
+  it("forwards typed blendMode on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.blendMode = "luminosity";
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.blendMode).toBe("luminosity");
+    expect(result.json).toContain('"blendMode": "luminosity"');
+  });
+
+  it("omits typed blendMode when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("blendMode");
+  });
+
   it("forwards polygon spec on compiled nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.kind = "polygon";
@@ -307,6 +325,7 @@ describe("compileStudioProject", () => {
       imageUrl: "/figma/voice/planet-3.svg",
       blendMode: "screen"
     });
+    expect(glow).not.toHaveProperty("blendMode");
   });
 
   it("produces deterministic JSON", () => {

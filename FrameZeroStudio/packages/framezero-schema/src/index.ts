@@ -48,6 +48,13 @@ export const animatedPropertySchema = z.enum(animatedProperties);
 export const metricSchema = z.enum(metrics);
 export const reduceMotionPolicySchema = z.enum(["respect", "ignore"]);
 export const motionSensitivitySchema = z.enum(["essential", "decorative"]);
+export const blendModeSchema = z.enum([
+  "normal", "multiply", "screen", "overlay", "darken", "lighten",
+  "colorDodge", "colorBurn", "softLight", "hardLight",
+  "difference", "exclusion",
+  "hue", "saturation", "color", "luminosity",
+  "plusLighter", "plusDarker"
+]);
 
 export const finiteNumberSchema = z.number().finite();
 export const nonNegativeNumberSchema = finiteNumberSchema.min(0);
@@ -230,6 +237,7 @@ export const motionNodeSchema = z
     cornerRadii: cornerRadiiSchema.optional(),
     shadow: shadowSpecSchema.optional(),
     layerBlur: nonNegativeNumberSchema.optional(),
+    blendMode: blendModeSchema.optional(),
     polygon: polygonSpecSchema.optional(),
     star: starSpecSchema.optional(),
     line: lineSpecSchema.optional(),
@@ -344,6 +352,7 @@ const emittedVisualSpecBaseSchema = z.object({
   cornerRadii: cornerRadiiSchema.optional(),
   shadow: shadowSpecSchema.optional(),
   layerBlur: nonNegativeNumberSchema.optional(),
+  blendMode: blendModeSchema.optional(),
   polygon: polygonSpecSchema.optional(),
   star: starSpecSchema.optional(),
   line: lineSpecSchema.optional(),
@@ -524,6 +533,7 @@ export const motionDocumentSchema = z
 export type MotionDocument = z.infer<typeof motionDocumentSchema>;
 export type MotionReduceMotionPolicy = z.infer<typeof reduceMotionPolicySchema>;
 export type MotionSensitivityLevel = z.infer<typeof motionSensitivitySchema>;
+export type MotionBlendMode = z.infer<typeof blendModeSchema>;
 export type MotionNode = z.infer<typeof motionNodeSchema>;
 export type MotionValue = z.infer<typeof motionValueSchema>;
 export type MotionFill = z.infer<typeof fillSchema>;

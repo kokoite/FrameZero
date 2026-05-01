@@ -424,7 +424,7 @@ public struct MotionRuntimeView: View {
             .scaleEffect(x: scaleX, y: scaleY)
             .rotationEffect(.degrees(rotation))
             .offset(x: offsetX, y: offsetY)
-            .blendMode(blendMode(for: engine.styleString(for: node, "blendMode")))
+            .blendMode(appleBlendMode(resolveBlendMode(node: node)))
             .allowsHitTesting(opacity > 0.05)
             .accessibilityLabel(node.id)
         )
@@ -589,18 +589,37 @@ public struct MotionRuntimeView: View {
         MotionRenderStyle.color(for: hex)
     }
 
-    private func blendMode(for value: String?) -> BlendMode {
-        switch value {
-        case "screen":
-            return .screen
-        case "plusLighter":
-            return .plusLighter
-        case "colorDodge":
-            return .colorDodge
-        case "multiply":
-            return .multiply
-        default:
-            return .normal
+    func resolveBlendMode(node: MotionNode) -> MotionBlendMode {
+        if let mode = node.blendMode {
+            return mode
+        }
+        if let value = engine.styleString(for: node, "blendMode"),
+           let parsed = MotionBlendMode(rawValue: value) {
+            return parsed
+        }
+        return .normal
+    }
+
+    private func appleBlendMode(_ mode: MotionBlendMode) -> BlendMode {
+        switch mode {
+        case .normal: return .normal
+        case .multiply: return .multiply
+        case .screen: return .screen
+        case .overlay: return .overlay
+        case .darken: return .darken
+        case .lighten: return .lighten
+        case .colorDodge: return .colorDodge
+        case .colorBurn: return .colorBurn
+        case .softLight: return .softLight
+        case .hardLight: return .hardLight
+        case .difference: return .difference
+        case .exclusion: return .exclusion
+        case .hue: return .hue
+        case .saturation: return .saturation
+        case .color: return .color
+        case .luminosity: return .luminosity
+        case .plusLighter: return .plusLighter
+        case .plusDarker: return .plusDarker
         }
     }
 }

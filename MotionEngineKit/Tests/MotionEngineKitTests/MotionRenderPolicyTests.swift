@@ -60,9 +60,9 @@ final class MotionRenderPolicyTests: XCTestCase {
         let rendererURL = packageRoot.appendingPathComponent("Sources/MotionEngineKit/MotionRenderer.swift")
         let source = try String(contentsOf: rendererURL)
 
-        XCTAssertTrue(source.contains("case \"screen\""))
-        XCTAssertTrue(source.contains("case \"plusLighter\""))
-        XCTAssertTrue(source.contains("case \"colorDodge\""))
+        XCTAssertTrue(source.contains("case .screen:"))
+        XCTAssertTrue(source.contains("case .plusLighter:"))
+        XCTAssertTrue(source.contains("case .colorDodge:"))
         XCTAssertTrue(source.contains(".compositingGroup()"), "Group opacity should be isolated before opacity and blend modifiers are applied.")
     }
 
