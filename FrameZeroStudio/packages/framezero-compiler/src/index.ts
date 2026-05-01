@@ -6,6 +6,7 @@ import {
   type MotionDragBinding,
   type MotionFill,
   type MotionCornerRadii,
+  type MotionShadow,
   type MotionStroke,
   type MotionForce,
   type MotionLineSpec,
@@ -51,6 +52,8 @@ export type StudioNode = {
   fills?: MotionFill[];
   stroke?: MotionStroke;
   cornerRadii?: MotionCornerRadii;
+  shadow?: MotionShadow;
+  layerBlur?: number;
   polygon?: MotionPolygonSpec;
   star?: MotionStarSpec;
   line?: MotionLineSpec;
@@ -187,6 +190,8 @@ function compileNodes(project: StudioProject): MotionNode[] {
     };
     if (node.stroke !== undefined) out.stroke = node.stroke;
     if (node.cornerRadii !== undefined) out.cornerRadii = node.cornerRadii;
+    if (node.shadow !== undefined) out.shadow = node.shadow;
+    if (node.layerBlur !== undefined) out.layerBlur = node.layerBlur;
     if (node.polygon !== undefined) out.polygon = node.polygon;
     if (node.star !== undefined) out.star = node.star;
     if (node.line !== undefined) out.line = node.line;

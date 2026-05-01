@@ -77,6 +77,13 @@ public struct MotionEffectsOverlay: View {
                     cornerRadius: cornerRadius
                 )
                     .frame(width: CGFloat(width), height: CGFloat(height))
+                    .shadow(
+                        color: shadowColor(particle.shadow),
+                        radius: CGFloat(particle.shadow?.blur ?? 0),
+                        x: CGFloat(particle.shadow?.x ?? 0),
+                        y: CGFloat(particle.shadow?.y ?? 0)
+                    )
+                    .blur(radius: CGFloat(particle.layerBlur ?? 0))
                     .opacity(opacity)
                     .scaleEffect(x: scale * scaleX, y: scale * scaleY)
                     .rotationEffect(.degrees(rotation))
@@ -112,6 +119,13 @@ public struct MotionEffectsOverlay: View {
                 )
                 .padding(CGFloat(padding))
                 .frame(width: width, height: height)
+                .shadow(
+                    color: shadowColor(component.shadow),
+                    radius: CGFloat(component.shadow?.blur ?? 0),
+                    x: CGFloat(component.shadow?.x ?? 0),
+                    y: CGFloat(component.shadow?.y ?? 0)
+                )
+                .blur(radius: CGFloat(component.layerBlur ?? 0))
                 .opacity(opacity)
                 .scaleEffect(x: scale * scaleX, y: scale * scaleY)
                 .rotationEffect(.degrees(rotation))
@@ -181,6 +195,11 @@ public struct MotionEffectsOverlay: View {
     private func string(_ value: MotionValue?) -> String? {
         guard case let .string(string) = value else { return nil }
         return string
+    }
+
+    private func shadowColor(_ shadow: MotionShadowSpec?) -> Color {
+        guard let shadow else { return .clear }
+        return (MotionRenderStyle.color(for: shadow.color) ?? .clear).opacity(shadow.opacity)
     }
 }
 

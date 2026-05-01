@@ -115,6 +115,15 @@ export const cornerRadiiSchema = z.object({
 }).strict();
 export type MotionCornerRadii = z.infer<typeof cornerRadiiSchema>;
 
+export const shadowSpecSchema = z.object({
+  x: finiteNumberSchema,
+  y: finiteNumberSchema,
+  blur: nonNegativeNumberSchema,
+  opacity: finiteNumberSchema.min(0).max(1),
+  color: hexColorSchema
+}).strict();
+export type MotionShadow = z.infer<typeof shadowSpecSchema>;
+
 export const polygonSpecSchema = z.object({
   sides: z.number().int().min(3).max(64),
   cornerRadius: nonNegativeNumberSchema.optional()
@@ -219,6 +228,8 @@ export const motionNodeSchema = z
     fills: z.array(fillSchema).default([]),
     stroke: strokeSpecSchema.optional(),
     cornerRadii: cornerRadiiSchema.optional(),
+    shadow: shadowSpecSchema.optional(),
+    layerBlur: nonNegativeNumberSchema.optional(),
     polygon: polygonSpecSchema.optional(),
     star: starSpecSchema.optional(),
     line: lineSpecSchema.optional(),
@@ -331,6 +342,8 @@ const emittedVisualSpecBaseSchema = z.object({
   fills: z.array(fillSchema).default([]),
   stroke: strokeSpecSchema.optional(),
   cornerRadii: cornerRadiiSchema.optional(),
+  shadow: shadowSpecSchema.optional(),
+  layerBlur: nonNegativeNumberSchema.optional(),
   polygon: polygonSpecSchema.optional(),
   star: starSpecSchema.optional(),
   line: lineSpecSchema.optional(),

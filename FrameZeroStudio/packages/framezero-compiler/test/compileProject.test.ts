@@ -103,6 +103,38 @@ describe("compileStudioProject", () => {
     expect(result.json).not.toContain('"cornerRadii"');
   });
 
+  it("forwards typed shadow on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.shadow = { x: 4, y: 8, blur: 12, opacity: 0.35, color: "#112233" };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.shadow).toEqual({ x: 4, y: 8, blur: 12, opacity: 0.35, color: "#112233" });
+    expect(result.json).toContain('"shadow": {');
+  });
+
+  it("forwards layerBlur on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.layerBlur = 6;
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.layerBlur).toBe(6);
+    expect(result.json).toContain('"layerBlur": 6');
+  });
+
+  it("omits typed shadow and layerBlur when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("shadow");
+    expect(card).not.toHaveProperty("layerBlur");
+    expect(result.json).not.toContain('"shadow"');
+    expect(result.json).not.toContain('"layerBlur"');
+  });
+
   it("forwards polygon spec on compiled nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.kind = "polygon";

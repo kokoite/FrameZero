@@ -181,7 +181,8 @@ public struct MotionRuntimeView: View {
                 MotionFilledShape(
                     shape: shape,
                     fills: node.fills,
-                    fallbackStyle: node.style
+                    fallbackStyle: node.style,
+                    layerBlur: node.layerBlur
                 )
                 .overlay {
                     if let stroke = resolveStroke(node: node) {
@@ -197,7 +198,8 @@ public struct MotionRuntimeView: View {
                 MotionFilledShape(
                     shape: shape,
                     fills: node.fills,
-                    fallbackStyle: node.style
+                    fallbackStyle: node.style,
+                    layerBlur: node.layerBlur
                 )
                 .overlay {
                     if let stroke = resolveStroke(node: node) {
@@ -213,7 +215,8 @@ public struct MotionRuntimeView: View {
                 MotionFilledShape(
                     shape: shape,
                     fills: node.fills,
-                    fallbackStyle: node.style
+                    fallbackStyle: node.style,
+                    layerBlur: node.layerBlur
                 )
                 .overlay {
                     if let stroke = resolveStroke(node: node) {
@@ -233,7 +236,8 @@ public struct MotionRuntimeView: View {
                 MotionFilledShape(
                     shape: shape,
                     fills: node.fills,
-                    fallbackStyle: node.style
+                    fallbackStyle: node.style,
+                    layerBlur: node.layerBlur
                 )
                 .overlay {
                     if let stroke = resolveStroke(node: node) {
@@ -254,7 +258,8 @@ public struct MotionRuntimeView: View {
                 MotionFilledShape(
                     shape: shape,
                     fills: node.fills,
-                    fallbackStyle: node.style
+                    fallbackStyle: node.style,
+                    layerBlur: node.layerBlur
                 )
                 .overlay {
                     if let stroke = resolveStroke(node: node) {
@@ -294,7 +299,8 @@ public struct MotionRuntimeView: View {
         MotionFilledShape(
             shape: roundedShape(for: node, fallback: cornerRadius),
             fills: node.fills,
-            fallbackStyle: node.style
+            fallbackStyle: node.style,
+            layerBlur: node.layerBlur
         )
     }
 
@@ -332,6 +338,21 @@ public struct MotionRuntimeView: View {
         )
     }
 
+    func resolveShadow(node: MotionNode) -> MotionShadowSpec? {
+        node.shadow
+    }
+
+    func resolveLayerBlur(node: MotionNode) -> Double? {
+        Self.resolveLayerBlur(layerBlur: node.layerBlur, style: node.style)
+    }
+
+    static func resolveLayerBlur(layerBlur: Double?, style: [String: MotionValue]) -> Double? {
+        if let layerBlur { return layerBlur }
+        if let blur = style["blur"]?.number { return blur }
+        if let figmaBlur = style["figmaBlur"]?.number { return figmaBlur / 2 }
+        return nil
+    }
+
     private func applyCommonModifiers<Content: View>(
         _ content: Content,
         node: MotionNode,
@@ -354,12 +375,13 @@ public struct MotionRuntimeView: View {
             && (engine.styleNumber(for: node, "figmaFilterBox.height") ?? 0) > 0
         let blur = hasFigmaFilterBox
             ? 0
-            : max(engine.styleNumber(for: node, "blur") ?? (engine.styleNumber(for: node, "figmaBlur") ?? 0) / 2, 0)
-        let shadowBlur = max(engine.styleNumber(for: node, "shadowBlur") ?? 0, 0)
-        let shadowX = engine.styleNumber(for: node, "shadowX") ?? 0
-        let shadowY = engine.styleNumber(for: node, "shadowY") ?? 0
-        let shadowOpacity = min(max(engine.styleNumber(for: node, "shadowOpacity") ?? 0, 0), 1)
-        let shadowColor = (color(for: engine.styleString(for: node, "shadowColor")) ?? .clear).opacity(shadowOpacity)
+            : max(resolveLayerBlur(node: node) ?? 0, 0)
+        let shadow = resolveShadow(node: node)
+        let shadowBlur = shadow?.blur ?? max(engine.styleNumber(for: node, "shadowBlur") ?? 0, 0)
+        let shadowX = shadow?.x ?? engine.styleNumber(for: node, "shadowX") ?? 0
+        let shadowY = shadow?.y ?? engine.styleNumber(for: node, "shadowY") ?? 0
+        let shadowOpacity = shadow?.opacity ?? min(max(engine.styleNumber(for: node, "shadowOpacity") ?? 0, 0), 1)
+        let shadowColor = (color(for: shadow?.color ?? engine.styleString(for: node, "shadowColor")) ?? .clear).opacity(shadowOpacity)
         let clipsContent = engine.styleBool(for: node, "clip")
         let effectBounds = effectInsets(for: node)
         let hasBackground = engine.styleString(for: node, "backgroundColor") != nil || !node.fills.isEmpty
@@ -977,6 +999,7 @@ private struct MotionFilledShape<S: Shape>: View {
     let shape: S
     let fills: [MotionFill]
     let fallbackStyle: [String: MotionValue]
+    let layerBlur: Double?
 
     var body: some View {
         if shouldDrawWithCanvas {
@@ -1001,7 +1024,7 @@ private struct MotionFilledShape<S: Shape>: View {
     }
 
     private var blurRadius: CGFloat {
-        CGFloat(max(fallbackStyle["blur"]?.number ?? (fallbackStyle["figmaBlur"]?.number ?? 0) / 2, 0))
+        CGFloat(max(MotionRuntimeView.resolveLayerBlur(layerBlur: layerBlur, style: fallbackStyle) ?? 0, 0))
     }
 
     private func drawCanvasFill(in size: CGSize, context: inout GraphicsContext) {

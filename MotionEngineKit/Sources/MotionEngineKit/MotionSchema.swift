@@ -71,6 +71,8 @@ struct MotionNode: Identifiable, Decodable {
     let fills: [MotionFill]
     let stroke: MotionStrokeSpec?
     let cornerRadii: MotionCornerRadii?
+    let shadow: MotionShadowSpec?
+    let layerBlur: Double?
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
     let line: MotionLineSpec?
@@ -87,6 +89,8 @@ struct MotionNode: Identifiable, Decodable {
         case fills
         case stroke
         case cornerRadii
+        case shadow
+        case layerBlur
         case polygon
         case star
         case line
@@ -105,6 +109,8 @@ struct MotionNode: Identifiable, Decodable {
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         stroke = try container.decodeIfPresent(MotionStrokeSpec.self, forKey: .stroke)
         cornerRadii = try container.decodeIfPresent(MotionCornerRadii.self, forKey: .cornerRadii)
+        shadow = try container.decodeIfPresent(MotionShadowSpec.self, forKey: .shadow)
+        layerBlur = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .layerBlur)
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
         line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)
@@ -207,6 +213,36 @@ struct MotionCornerRadii: Decodable, Equatable {
         topRight = try c.decodeFiniteNonNegativeDouble(forKey: .topRight)
         bottomLeft = try c.decodeFiniteNonNegativeDouble(forKey: .bottomLeft)
         bottomRight = try c.decodeFiniteNonNegativeDouble(forKey: .bottomRight)
+    }
+}
+
+struct MotionShadowSpec: Decodable, Equatable {
+    let x: Double
+    let y: Double
+    let blur: Double
+    let opacity: Double
+    let color: String
+
+    private enum CodingKeys: String, CodingKey {
+        case x, y, blur, opacity, color
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        x = try c.decodeFiniteDouble(forKey: .x)
+        y = try c.decodeFiniteDouble(forKey: .y)
+        blur = try c.decodeFiniteNonNegativeDouble(forKey: .blur)
+        opacity = try c.decodeUnitInterval(forKey: .opacity)
+
+        let hex = try c.decode(String.self, forKey: .color)
+        guard MotionRenderStyle.isValidHexColor(hex) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .color,
+                in: c,
+                debugDescription: "shadow.color must be a 6-digit hex"
+            )
+        }
+        color = hex
     }
 }
 
@@ -783,6 +819,8 @@ struct MotionParticleSpec: Decodable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let shadow: MotionShadowSpec?
+    let layerBlur: Double?
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
     let line: MotionLineSpec?
@@ -796,6 +834,8 @@ struct MotionParticleSpec: Decodable {
         case layout
         case style
         case fills
+        case shadow
+        case layerBlur
         case polygon
         case star
         case line
@@ -811,6 +851,8 @@ struct MotionParticleSpec: Decodable {
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        shadow = try container.decodeIfPresent(MotionShadowSpec.self, forKey: .shadow)
+        layerBlur = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .layerBlur)
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
         line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)
@@ -883,6 +925,8 @@ struct MotionComponentSpec: Decodable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let shadow: MotionShadowSpec?
+    let layerBlur: Double?
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
     let line: MotionLineSpec?
@@ -897,6 +941,8 @@ struct MotionComponentSpec: Decodable {
         case layout
         case style
         case fills
+        case shadow
+        case layerBlur
         case polygon
         case star
         case line
@@ -913,6 +959,8 @@ struct MotionComponentSpec: Decodable {
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        shadow = try container.decodeIfPresent(MotionShadowSpec.self, forKey: .shadow)
+        layerBlur = try container.decodeFiniteNonNegativeDoubleIfPresent(forKey: .layerBlur)
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
         line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)

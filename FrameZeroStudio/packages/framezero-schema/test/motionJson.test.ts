@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cornerRadiiSchema, documentUpdatePayloadSchema, linePointSchema, lineSpecSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, starSpecSchema, strokeSpecSchema } from "../src/index";
+import { cornerRadiiSchema, documentUpdatePayloadSchema, linePointSchema, lineSpecSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, shadowSpecSchema, starSpecSchema, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -681,6 +681,91 @@ describe("cornerRadiiSchema", () => {
 
     expect(node).not.toHaveProperty("cornerRadii");
     expect(node.style.cornerRadius).toBe(8);
+  });
+});
+
+describe("shadowSpecSchema and layerBlur", () => {
+  const shadow = { x: 4, y: 8, blur: 12, opacity: 0.35, color: "#112233" };
+
+  it("accepts full shadow", () => {
+    expect(shadowSpecSchema.parse(shadow)).toEqual(shadow);
+  });
+
+  it("rejects negative blur", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, blur: -1 }).success).toBe(false);
+  });
+
+  it("rejects opacity greater than 1", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, opacity: 1.1 }).success).toBe(false);
+  });
+
+  it("rejects opacity less than 0", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, opacity: -0.1 }).success).toBe(false);
+  });
+
+  it("rejects non-hex color", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, color: "red" }).success).toBe(false);
+  });
+
+  it("rejects extra keys", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, spread: 2 }).success).toBe(false);
+  });
+
+  it("rejects non-finite x, y, and blur values", () => {
+    expect(shadowSpecSchema.safeParse({ ...shadow, x: Number.NaN }).success).toBe(false);
+    expect(shadowSpecSchema.safeParse({ ...shadow, y: Number.POSITIVE_INFINITY }).success).toBe(false);
+    expect(shadowSpecSchema.safeParse({ ...shadow, blur: Number.POSITIVE_INFINITY }).success).toBe(false);
+  });
+
+  it("accepts layerBlur", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      layerBlur: 6
+    });
+
+    expect(node.layerBlur).toBe(6);
+  });
+
+  it("rejects negative layerBlur", () => {
+    expect(motionNodeSchema.safeParse({
+      id: "card",
+      kind: "roundedRectangle",
+      layerBlur: -1
+    }).success).toBe(false);
+  });
+
+  it("accepts node with typed shadow and layerBlur", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      shadow,
+      layerBlur: 6
+    });
+
+    expect(node.shadow).toEqual(shadow);
+    expect(node.layerBlur).toBe(6);
+  });
+
+  it("keeps untyped shadow style keys parseable", () => {
+    const node = motionNodeSchema.parse({
+      id: "card",
+      kind: "roundedRectangle",
+      style: {
+        shadowX: 4,
+        shadowY: 8,
+        shadowBlur: 12,
+        shadowOpacity: 0.35,
+        shadowColor: "#112233"
+      }
+    });
+
+    expect(node).not.toHaveProperty("shadow");
+    expect(node.style.shadowX).toBe(4);
+    expect(node.style.shadowY).toBe(8);
+    expect(node.style.shadowBlur).toBe(12);
+    expect(node.style.shadowOpacity).toBe(0.35);
+    expect(node.style.shadowColor).toBe("#112233");
   });
 });
 

@@ -134,6 +134,8 @@ struct MotionParticleRuntime: Identifiable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let shadow: MotionShadowSpec?
+    let layerBlur: Double?
     var channels: [String: MotionChannel]
     let lifetime: Double
     var elapsed: Double
@@ -145,6 +147,8 @@ struct MotionComponentRuntime: Identifiable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let shadow: MotionShadowSpec?
+    let layerBlur: Double?
     var channels: [String: MotionChannel]
     let lifetime: Double
     var elapsed: Double
@@ -2472,6 +2476,8 @@ public final class MotionEngine {
             layout: particle.layout,
             style: particle.style,
             fills: particle.fills,
+            shadow: particle.shadow,
+            layerBlur: particle.layerBlur,
             channels: channels,
             lifetime: particle.lifetime,
             elapsed: 0
@@ -2554,6 +2560,8 @@ public final class MotionEngine {
             layout: component.layout,
             style: component.style,
             fills: component.fills,
+            shadow: component.shadow,
+            layerBlur: component.layerBlur,
             channels: channels,
             lifetime: component.lifetime,
             elapsed: 0
