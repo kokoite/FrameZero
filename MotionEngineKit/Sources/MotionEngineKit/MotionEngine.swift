@@ -3066,7 +3066,7 @@ private extension MotionViewport {
     }
 }
 
-private extension MotionChannel {
+extension MotionChannel {
     static let reducedMotionSpec = MotionSpec.timed(TimedSpec(
         type: "timed",
         duration: 0.15,

@@ -1,0 +1,820 @@
+{
+  "dt" : 0.016666666666666666,
+  "initial" : {
+    "current" : 0,
+    "target" : 100,
+    "velocity" : 0
+  },
+  "motion" : {
+    "dampingFraction" : 0.7,
+    "response" : 0.4,
+    "type" : "spring"
+  },
+  "name" : "spring",
+  "steps" : [
+    {
+      "current" : 0,
+      "velocity" : 0
+    },
+    {
+      "current" : 6.853891945200943,
+      "velocity" : 411.2335167120566
+    },
+    {
+      "current" : 17.579834886224745,
+      "velocity" : 643.5565764614282
+    },
+    {
+      "current" : 30.023503471462814,
+      "velocity" : 746.6201151142841
+    },
+    {
+      "current" : 42.70244277117694,
+      "velocity" : 760.7363579828477
+    },
+    {
+      "current" : 54.66142076534344,
+      "velocity" : 717.5386796499903
+    },
+    {
+      "current" : 65.34466162513581,
+      "velocity" : 640.9944515875422
+    },
+    {
+      "current" : 74.48752964685883,
+      "velocity" : 548.572081303381
+    },
+    {
+      "current" : 82.02795866799586,
+      "velocity" : 452.4257412682217
+    },
+    {
+      "current" : 88.03646040030804,
+      "velocity" : 360.51010393873116
+    },
+    {
+      "current" : 92.6626993044512,
+      "velocity" : 277.5743342485893
+    },
+    {
+      "current" : 96.09622375187755,
+      "velocity" : 206.01146684558083
+    },
+    {
+      "current" : 98.53885636747114,
+      "velocity" : 146.55795693561583
+    },
+    {
+      "current" : 100.18636257606956,
+      "velocity" : 98.8503725159049
+    },
+    {
+      "current" : 101.21725313154896,
+      "velocity" : 61.8534333287644
+    },
+    {
+      "current" : 101.78687334985501,
+      "velocity" : 34.17721309836355
+    },
+    {
+      "current" : 102.02524648536166,
+      "velocity" : 14.302388130398537
+    },
+    {
+      "current" : 102.03744309781688,
+      "velocity" : 0.7317967473126217
+    },
+    {
+      "current" : 101.90552526995917,
+      "velocity" : -7.915069671462579
+    },
+    {
+      "current" : 101.69135520831207,
+      "velocity" : -12.85020369882546
+    },
+    {
+      "current" : 101.43975891571151,
+      "velocity" : -15.095777556034117
+    },
+    {
+      "current" : 101.1816979602822,
+      "velocity" : -15.483657325759303
+    },
+    {
+      "current" : 100.93722898374125,
+      "velocity" : -14.668138592456566
+    },
+    {
+      "current" : 100.71812590512761,
+      "velocity" : -13.146184716818887
+    },
+    {
+      "current" : 100.53010872553037,
+      "velocity" : -11.281030775834626
+    },
+    {
+      "current" : 100.37467036221318,
+      "velocity" : -9.326301799031008
+    },
+    {
+      "current" : 100.25052363281893,
+      "velocity" : -7.448803763655077
+    },
+    {
+      "current" : 100.15470843718782,
+      "velocity" : -5.748911737865885
+    },
+    {
+      "current" : 100.08340779582306,
+      "velocity" : -4.27803848188514
+    },
+    {
+      "current" : 100.03252352422129,
+      "velocity" : -3.053056296106112
+    },
+    {
+      "current" : 99.99806018502815,
+      "velocity" : -2.067800351588333
+    },
+    {
+      "current" : 99.97636127220031,
+      "velocity" : -1.3019347696705261
+    },
+    {
+      "current" : 99.96423559916501,
+      "velocity" : -0.7275403821180213
+    },
+    {
+      "current" : 99.959005470806,
+      "velocity" : -0.3138077015405666
+    },
+    {
+      "current" : 99.9585020053449,
+      "velocity" : -0.03020792766658098
+    },
+    {
+      "current" : 99.96102729732617,
+      "velocity" : 0.15151751887628837
+    },
+    {
+      "current" : 99.96529816838424,
+      "velocity" : 0.256252263483897
+    },
+    {
+      "current" : 99.97038210948453,
+      "velocity" : 0.30503646601777273
+    },
+    {
+      "current" : 99.97563266706247,
+      "velocity" : 0.31503345467664023
+    },
+    {
+      "current" : 99.98062890544657,
+      "velocity" : 0.2997743030457456
+    },
+    {
+      "current" : 99.9851216007096,
+      "velocity" : 0.26956171578204347
+    },
+    {
+      "current" : 99.98898738656598,
+      "velocity" : 0.2319471513822416
+    },
+    {
+      "current" : 99.99219108052868,
+      "velocity" : 0.19222163776178447
+    },
+    {
+      "current" : 99.99475577422865,
+      "velocity" : 0.15388162199798988
+    },
+    {
+      "current" : 99.99673989215958,
+      "velocity" : 0.11904707585617064
+    },
+    {
+      "current" : 99.9982202371557,
+      "velocity" : 0.08882069976713464
+    },
+    {
+      "current" : 99.99927999039485,
+      "velocity" : 0.0635851943487582
+    },
+    {
+      "current" : 100.00000067246542,
+      "velocity" : 0.043240924233633106
+    },
+    {
+      "current" : 100.0004571646711,
+      "velocity" : 0.027389532341315727
+    },
+    {
+      "current" : 100.00071501017224,
+      "velocity" : 0.015470730068482619
+    },
+    {
+      "current" : 100.0008293443367,
+      "velocity" : 0.006860049867290012
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    },
+    {
+      "current" : 100,
+      "velocity" : 0
+    }
+  ]
+}
