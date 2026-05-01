@@ -101,13 +101,13 @@ describe("MotionRuntime drag bindings", () => {
     expect(runtime.valueFor("orb", "scale.y")).toBeCloseTo(0.92, 5);
   });
 
-  it("handleDragEnded snaps back to anchor (Phase 7b: no projectile yet)", () => {
+  it("handleDragEnded snaps back to anchor when pull is below minLaunchPull", () => {
     const doc = parseMotionDocument(dragDocument());
     const runtime = new MotionRuntime(doc);
-    runtime.handleDragChanged("orb", sample(80, 60));
-    expect(runtime.valueFor("orb", "offset.x")).toBeCloseTo(80, 5);
+    runtime.handleDragChanged("orb", sample(10, 0));
+    expect(runtime.valueFor("orb", "offset.x")).toBeCloseTo(10, 5);
 
-    runtime.handleDragEnded("orb", sample(80, 60));
+    runtime.handleDragEnded("orb", sample(10, 0));
     // Snap-back uses a spring; advance a few ticks and verify approach to anchor (0, 0).
     for (let i = 0; i < 60; i++) runtime.tick(1 / 60);
     expect(runtime.valueFor("orb", "offset.x")).toBeCloseTo(0, 1);

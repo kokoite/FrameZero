@@ -1,6 +1,8 @@
 import type {
   MotionDocument,
+  MotionBody,
   MotionDragBinding,
+  MotionForce,
   MotionReduceMotionPolicy,
   MotionRule,
   MotionSensitivityLevel,
@@ -28,6 +30,8 @@ export interface MotionRuntimeOptions {
 type MotionMachine = MotionDocument["machines"][number];
 type MotionState = MotionMachine["states"][number];
 type MotionTransition = MotionMachine["transitions"][number];
+type MotionPhysicsBodySpec = MotionBody;
+type MotionForceSpec = MotionForce;
 
 interface PendingChannelTarget {
   key: MotionResolvedPropertyKey;
@@ -50,6 +54,25 @@ const DRAG_DEFAULTS = {
   snapScaleSpringDamping: 0.8
 } as const;
 
+const PROJECTILE_DEFAULTS = {
+  bodyMass: 1,
+  bodyAirResistance: 0.7,
+  bodyRestitution: 0.72,
+  bodyFriction: 0.92,
+  bodyStopSpeed: 45,
+  gravity: 980,
+  fallbackGravity: 900,
+  throwThreshold: 24,
+  throwInfluenceWhenFast: 0.22,
+  launchPowerBase: 0.68,
+  launchPowerRange: 0.62,
+  launchPowerExponent: 0.5,
+  releaseShapeSpringResponse: 0.2,
+  releaseShapeSpringDamping: 0.62,
+  releaseScaleSpringResponse: 0.22,
+  releaseScaleSpringDamping: 0.66
+} as const;
+
 export interface MotionDragSample {
   translationX: number;
   translationY: number;
@@ -67,6 +90,37 @@ interface ActiveSlingshotDrag {
   charge: number;
 }
 
+interface ActiveProjectile {
+  nodeID: string;
+  radius: number;
+  mass: number;
+  forceX: number;
+  forceY: number;
+  airResistance: number;
+  restitution: number;
+  friction: number;
+  stopSpeed: number;
+  collision: "none" | "screenBounds" | "safeAreaBounds";
+  x: number;
+  y: number;
+  velocityX: number;
+  velocityY: number;
+  accelerationX: number;
+  accelerationY: number;
+  collisionCount: number;
+  restingFrames: number;
+}
+
+interface ResolvedPhysicsBody {
+  radius: number;
+  mass: number;
+  airResistance: number;
+  restitution: number;
+  friction: number;
+  stopSpeed: number;
+  collision: "none" | "screenBounds" | "safeAreaBounds";
+}
+
 export class MotionRuntime {
   private readonly document: MotionDocument;
   private readonly channels = new Map<string, MotionChannel>();
@@ -80,6 +134,10 @@ export class MotionRuntime {
   private readonly tapTriggerIDsByNodeID = new Map<string, string[]>();
   private readonly dragBindingByNodeID = new Map<string, MotionDragBinding>();
   private readonly activeSlingshotDrags = new Map<string, ActiveSlingshotDrag>();
+  private readonly activeProjectiles = new Map<string, ActiveProjectile>();
+  private readonly bodySpecByNodeID = new Map<string, MotionPhysicsBodySpec>();
+  private readonly forceSpecsByNodeID = new Map<string, MotionForceSpec[]>();
+  private readonly globalForces: MotionForceSpec[] = [];
   private readonly stateElapsedByMachine = new Map<string, number>();
   private idleElapsed = 0;
 
@@ -113,6 +171,26 @@ export class MotionRuntime {
       const nodeIDs = resolveNodeIDs(binding.selector, doc);
       for (const nodeID of nodeIDs) {
         this.dragBindingByNodeID.set(nodeID, binding);
+      }
+    }
+
+    for (const body of doc.bodies ?? []) {
+      const nodeIDs = resolveNodeIDs(body.selector, doc);
+      for (const nodeID of nodeIDs) {
+        this.bodySpecByNodeID.set(nodeID, body);
+      }
+    }
+
+    for (const force of doc.forces ?? []) {
+      if (force.selector === undefined) {
+        this.globalForces.push(force);
+        continue;
+      }
+      const nodeIDs = resolveNodeIDs(force.selector, doc);
+      for (const nodeID of nodeIDs) {
+        const existing = this.forceSpecsByNodeID.get(nodeID) ?? [];
+        existing.push(force);
+        this.forceSpecsByNodeID.set(nodeID, existing);
       }
     }
 
@@ -286,15 +364,58 @@ export class MotionRuntime {
     this.forceSnapChannel(nodeID, "scale.y", 1 + stretchY * charge);
   }
 
-  handleDragEnded(nodeID: string, _sample: MotionDragSample): void {
+  handleDragEnded(nodeID: string, sample: MotionDragSample): void {
     const drag = this.activeSlingshotDrags.get(nodeID);
     if (drag === undefined) return;
 
-    // Phase 7b ships SNAP-BACK ONLY. Projectile launch (when pull >= minLaunchPull)
-    // is Phase 7c — needs ActiveProjectile state + tick-loop integration with
-    // gravity / air resistance / collision / restitution / friction.
-    // For Phase 7b we always snap back so the drag interaction is observable.
-    this.snapNodeToAnchor(nodeID, drag.anchorX, drag.anchorY);
+    const pullX = drag.anchorX - drag.currentX;
+    const pullY = drag.anchorY - drag.currentY;
+    const pullDistance = Math.hypot(pullX, pullY);
+    const minLaunchPull = drag.binding.minLaunchPull ?? DRAG_DEFAULTS.minLaunchPull;
+
+    if (pullDistance < minLaunchPull) {
+      this.snapNodeToAnchor(nodeID, drag.anchorX, drag.anchorY);
+      this.activeSlingshotDrags.delete(nodeID);
+      return;
+    }
+
+    const throwX = sample.predictedTranslationX - sample.translationX;
+    const throwY = sample.predictedTranslationY - sample.translationY;
+    const throwSpeed = Math.hypot(throwX, throwY);
+    const throwThreshold = drag.binding.throwThreshold ?? PROJECTILE_DEFAULTS.throwThreshold;
+    const isThrow = throwSpeed >= throwThreshold;
+    const pullInfluence = isThrow
+      ? readChargeFeedback(drag.binding, "throwInfluenceWhenFast") ?? PROJECTILE_DEFAULTS.throwInfluenceWhenFast
+      : 1;
+    const charge = Math.min(Math.max(pullDistance / Math.max(drag.binding.maxPull, 1), 0), 1);
+    const powerCurve = launchPowerMultiplier(drag.binding, charge);
+    const throwPower = drag.binding.throwPower ?? 0;
+    const velocityX = pullX * drag.binding.launchPower * pullInfluence * powerCurve + throwX * throwPower;
+    const velocityY = pullY * drag.binding.launchPower * pullInfluence * powerCurve + throwY * throwPower;
+    const body = this.physicsBody(nodeID, drag.binding);
+    const acceleration = this.forceAcceleration(nodeID, body.mass, drag.binding.gravity);
+
+    this.activeProjectiles.set(nodeID, {
+      nodeID,
+      radius: body.radius,
+      mass: body.mass,
+      forceX: acceleration.x,
+      forceY: acceleration.y,
+      airResistance: body.airResistance,
+      restitution: body.restitution,
+      friction: body.friction,
+      stopSpeed: body.stopSpeed,
+      collision: body.collision,
+      x: drag.currentX,
+      y: drag.currentY,
+      velocityX,
+      velocityY,
+      accelerationX: 0,
+      accelerationY: acceleration.y,
+      collisionCount: 0,
+      restingFrames: 0
+    });
+    this.releaseDragShape(nodeID);
     this.activeSlingshotDrags.delete(nodeID);
   }
 
@@ -330,6 +451,8 @@ export class MotionRuntime {
         hasActiveChannels = true;
       }
     }
+
+    hasActiveChannels = this.tickProjectiles(clampedDt) || hasActiveChannels;
 
     // Track per-machine state-elapsed + global idle-elapsed for future auto/
     // after trigger dispatch (Phase 7c-triggers). Mirrors Swift tick at
@@ -430,16 +553,182 @@ export class MotionRuntime {
       response: DRAG_DEFAULTS.snapOffsetSpringResponse,
       dampingFraction: DRAG_DEFAULTS.snapOffsetSpringDamping
     };
-    const scaleSpring: MotionSpec = {
-      type: "spring",
-      response: DRAG_DEFAULTS.snapScaleSpringResponse,
-      dampingFraction: DRAG_DEFAULTS.snapScaleSpringDamping
-    };
     this.setChannelTargetForDrag(nodeID, "offset.x", anchorX, offsetSpring);
     this.setChannelTargetForDrag(nodeID, "offset.y", anchorY, offsetSpring);
-    this.setChannelTargetForDrag(nodeID, "scale", 1, scaleSpring);
-    this.setChannelTargetForDrag(nodeID, "scale.x", 1, scaleSpring);
-    this.setChannelTargetForDrag(nodeID, "scale.y", 1, scaleSpring);
+    this.releaseDragShape(nodeID);
+  }
+
+  private releaseDragShape(nodeID: string): void {
+    const shapeSpring: MotionSpec = {
+      type: "spring",
+      response: PROJECTILE_DEFAULTS.releaseShapeSpringResponse,
+      dampingFraction: PROJECTILE_DEFAULTS.releaseShapeSpringDamping
+    };
+    const scaleSpring: MotionSpec = {
+      type: "spring",
+      response: PROJECTILE_DEFAULTS.releaseScaleSpringResponse,
+      dampingFraction: PROJECTILE_DEFAULTS.releaseScaleSpringDamping
+    };
+    this.setChannelTargetForDrag(nodeID, "scale.x", 1, shapeSpring);
+    this.setChannelTargetForDrag(nodeID, "scale.y", 1, shapeSpring);
+    if (this.hasChannel(nodeID, "scale")) {
+      this.setChannelTargetForDrag(nodeID, "scale", 1, scaleSpring);
+    }
+  }
+
+  private physicsBody(nodeID: string, binding: MotionDragBinding): ResolvedPhysicsBody {
+    let spec: MotionPhysicsBodySpec | undefined;
+    let currentID: string | undefined = nodeID;
+    while (currentID !== undefined) {
+      spec = this.bodySpecByNodeID.get(currentID);
+      if (spec !== undefined) {
+        break;
+      }
+      currentID = this.parentByID.get(currentID);
+    }
+
+    const node = this.document.nodes.find((candidate) => candidate.id === nodeID);
+    const layoutWidth = node?.layout.width;
+    const fallbackRadius = typeof layoutWidth === "number" ? layoutWidth / 2 : 30;
+    return {
+      radius: binding.radius ?? spec?.radius ?? fallbackRadius,
+      mass: Math.max(spec?.mass ?? PROJECTILE_DEFAULTS.bodyMass, 0.001),
+      airResistance: binding.airResistance ?? spec?.airResistance ?? PROJECTILE_DEFAULTS.bodyAirResistance,
+      restitution: binding.restitution ?? spec?.restitution ?? PROJECTILE_DEFAULTS.bodyRestitution,
+      friction: binding.friction ?? spec?.friction ?? PROJECTILE_DEFAULTS.bodyFriction,
+      stopSpeed: binding.stopSpeed ?? spec?.stopSpeed ?? PROJECTILE_DEFAULTS.bodyStopSpeed,
+      collision: spec?.collision ?? "screenBounds"
+    };
+  }
+
+  private forceAcceleration(nodeID: string, mass: number, fallbackGravity?: number): { x: number; y: number } {
+    const forces: MotionForceSpec[] = [...this.globalForces];
+    let currentID: string | undefined = nodeID;
+    while (currentID !== undefined) {
+      const scopedForces = this.forceSpecsByNodeID.get(currentID);
+      if (scopedForces !== undefined) {
+        forces.push(...scopedForces);
+      }
+      currentID = this.parentByID.get(currentID);
+    }
+
+    const safeMass = Math.max(mass, 0.001);
+    let x = 0;
+    let y = 0;
+    let hasGravity = false;
+    for (const force of forces) {
+      switch (force.type) {
+        case "gravity":
+          x += force.x ?? 0;
+          y += force.y ?? PROJECTILE_DEFAULTS.gravity;
+          hasGravity = true;
+          break;
+        case "wind":
+        case "constant":
+          x += (force.x ?? 0) / safeMass;
+          y += (force.y ?? 0) / safeMass;
+          break;
+      }
+    }
+    if (!hasGravity) {
+      y += fallbackGravity ?? PROJECTILE_DEFAULTS.fallbackGravity;
+    }
+    return { x, y };
+  }
+
+  private tickProjectiles(dt: number): boolean {
+    let hasActive = false;
+    for (const nodeID of [...this.activeProjectiles.keys()].sort()) {
+      const projectile = this.activeProjectiles.get(nodeID);
+      if (projectile === undefined) {
+        continue;
+      }
+
+      projectile.accelerationX = -projectile.airResistance * projectile.velocityX + projectile.forceX;
+      projectile.accelerationY = projectile.forceY - projectile.airResistance * projectile.velocityY;
+      projectile.velocityX += projectile.accelerationX * dt;
+      projectile.velocityY += projectile.accelerationY * dt;
+      const drag = Math.exp(-projectile.airResistance * dt * 0.18);
+      projectile.velocityX *= drag;
+      projectile.velocityY *= drag;
+      projectile.x += projectile.velocityX * dt;
+      projectile.y += projectile.velocityY * dt;
+
+      const viewport = this.viewport;
+      if (viewport !== undefined && projectile.collision !== "none") {
+        const safe = projectile.collision === "safeAreaBounds";
+        const left = -viewport.width / 2 + (safe ? viewport.safeAreaLeading : 0) + projectile.radius;
+        const right = viewport.width / 2 - (safe ? viewport.safeAreaTrailing : 0) - projectile.radius;
+        const top = -viewport.height / 2 + (safe ? viewport.safeAreaTop : 0) + projectile.radius;
+        const bottom = viewport.height / 2 - (safe ? viewport.safeAreaBottom : 0) - projectile.radius;
+        let didCollide = false;
+
+        if (projectile.x < left) {
+          projectile.x = left;
+          if (projectile.velocityX < 0) {
+            projectile.velocityX = -projectile.velocityX * projectile.restitution;
+            projectile.velocityY *= projectile.friction;
+            didCollide = true;
+          }
+        } else if (projectile.x > right) {
+          projectile.x = right;
+          if (projectile.velocityX > 0) {
+            projectile.velocityX = -projectile.velocityX * projectile.restitution;
+            projectile.velocityY *= projectile.friction;
+            didCollide = true;
+          }
+        }
+
+        if (projectile.y < top) {
+          projectile.y = top;
+          if (projectile.velocityY < 0) {
+            projectile.velocityY = -projectile.velocityY * projectile.restitution;
+            projectile.velocityX *= projectile.friction;
+            didCollide = true;
+          }
+        } else if (projectile.y > bottom) {
+          projectile.y = bottom;
+          if (projectile.velocityY > 0) {
+            projectile.velocityY = -projectile.velocityY * projectile.restitution;
+            projectile.velocityX *= projectile.friction;
+            didCollide = true;
+          }
+        }
+
+        if (didCollide) {
+          projectile.collisionCount += 1;
+        }
+        const isOnFloor = Math.abs(projectile.y - bottom) < 0.001;
+        const speed = Math.hypot(projectile.velocityX, projectile.velocityY);
+        if (isOnFloor && speed < projectile.stopSpeed) {
+          projectile.velocityX = 0;
+          projectile.velocityY = 0;
+          projectile.accelerationX = 0;
+          projectile.accelerationY = 0;
+          projectile.restingFrames += 1;
+        } else {
+          projectile.restingFrames = 0;
+        }
+      }
+
+      this.forceSnapChannel(projectile.nodeID, "offset.x", projectile.x);
+      const xChannel = this.channels.get(channelKey(projectile.nodeID, "offset.x"));
+      if (xChannel !== undefined) {
+        xChannel.velocity = projectile.velocityX;
+      }
+      this.forceSnapChannel(projectile.nodeID, "offset.y", projectile.y);
+      const yChannel = this.channels.get(channelKey(projectile.nodeID, "offset.y"));
+      if (yChannel !== undefined) {
+        yChannel.velocity = projectile.velocityY;
+      }
+
+      if (projectile.collisionCount > 0 && projectile.restingFrames >= 4) {
+        this.activeProjectiles.delete(nodeID);
+      } else {
+        hasActive = true;
+      }
+    }
+    return hasActive;
   }
 
   private setChannelTargetForDrag(nodeID: string, property: string, target: number, motion: MotionSpec): void {
@@ -638,4 +927,11 @@ function readChargeFeedback(binding: MotionDragBinding, key: string): number | u
   const value = feedback[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   return undefined;
+}
+
+function launchPowerMultiplier(binding: MotionDragBinding, charge: number): number {
+  const base = readChargeFeedback(binding, "launchPowerBase") ?? PROJECTILE_DEFAULTS.launchPowerBase;
+  const range = readChargeFeedback(binding, "launchPowerRange") ?? PROJECTILE_DEFAULTS.launchPowerRange;
+  const exponent = readChargeFeedback(binding, "launchPowerExponent") ?? PROJECTILE_DEFAULTS.launchPowerExponent;
+  return base + range * Math.pow(Math.min(Math.max(charge, 0), 1), exponent);
 }
