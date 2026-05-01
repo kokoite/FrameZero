@@ -393,6 +393,10 @@ export type MotionPropertySelector = z.infer<typeof propertySelectorSchema>;
 export type MotionNodeSelector = z.infer<typeof nodeSelectorSchema>;
 export type MotionAssignment = z.infer<typeof motionAssignmentSchema>;
 export type MotionRule = z.infer<typeof motionRuleSchema>;
+export type MotionDragBinding = z.infer<typeof dragBindingSchema>;
+export type MotionBody = z.infer<typeof bodySchema>;
+export type MotionForce = z.infer<typeof forceSchema>;
+export type MotionPointValue = z.infer<typeof pointValueSchema>;
 
 export const previewEnvelopeSchema = z.object({
   protocolVersion: z.literal(1),

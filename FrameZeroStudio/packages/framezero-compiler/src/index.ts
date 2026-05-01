@@ -1,8 +1,11 @@
 import {
   type MotionAction,
   type MotionAssignment,
+  type MotionBody,
   type MotionDocument,
+  type MotionDragBinding,
   type MotionFill,
+  type MotionForce,
   type MotionNode,
   type MotionRule,
   type MotionSpec,
@@ -21,6 +24,9 @@ export type StudioProject = {
   phases: Record<string, StudioPhase>;
   phaseOrder: string[];
   triggers: Record<string, StudioTrigger>;
+  dragBindings?: MotionDragBinding[];
+  bodies?: MotionBody[];
+  forces?: MotionForce[];
   components: Record<string, StudioComponent>;
   editor?: StudioEditorState;
 };
@@ -129,9 +135,9 @@ export function compileStudioProject(project: StudioProject): CompileResult {
       }
     ],
     triggers: compileTriggers(project),
-    dragBindings: [],
-    bodies: [],
-    forces: []
+    dragBindings: [...(project.dragBindings ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    bodies: [...(project.bodies ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    forces: [...(project.forces ?? [])].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   });
 
   return {
