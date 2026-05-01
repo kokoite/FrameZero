@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cornerRadiiSchema, documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, previewEnvelopeSchema, safeParseMotionDocument, strokeSpecSchema } from "../src/index";
+import { cornerRadiiSchema, documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, starSpecSchema, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -806,5 +806,112 @@ describe("timedEasingSchema (cubic-bezier)", () => {
     }));
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("polygonSpecSchema", () => {
+  it("accepts a valid polygon spec", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 6, cornerRadius: 4 }).success).toBe(true);
+  });
+
+  it("accepts polygon spec without cornerRadius", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 8 }).success).toBe(true);
+  });
+
+  it("rejects sides less than 3", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 2 }).success).toBe(false);
+  });
+
+  it("rejects sides greater than 64", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 65 }).success).toBe(false);
+  });
+
+  it("rejects non-integer sides", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 3.5 }).success).toBe(false);
+  });
+
+  it("rejects negative cornerRadius", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 6, cornerRadius: -1 }).success).toBe(false);
+  });
+
+  it("rejects extra keys (.strict())", () => {
+    expect(polygonSpecSchema.safeParse({ sides: 6, extra: 1 }).success).toBe(false);
+  });
+});
+
+describe("starSpecSchema", () => {
+  it("accepts a valid star spec", () => {
+    expect(starSpecSchema.safeParse({ points: 5, innerRadius: 0.5 }).success).toBe(true);
+  });
+
+  it("accepts innerRadius=1.0 (degenerate boundary)", () => {
+    expect(starSpecSchema.safeParse({ points: 5, innerRadius: 1.0 }).success).toBe(true);
+  });
+
+  it("accepts innerRadius=0", () => {
+    expect(starSpecSchema.safeParse({ points: 5, innerRadius: 0 }).success).toBe(true);
+  });
+
+  it("rejects innerRadius greater than 1", () => {
+    expect(starSpecSchema.safeParse({ points: 5, innerRadius: 1.01 }).success).toBe(false);
+  });
+
+  it("rejects negative innerRadius", () => {
+    expect(starSpecSchema.safeParse({ points: 5, innerRadius: -0.01 }).success).toBe(false);
+  });
+
+  it("rejects points less than 3", () => {
+    expect(starSpecSchema.safeParse({ points: 2, innerRadius: 0.5 }).success).toBe(false);
+  });
+
+  it("rejects points greater than 64", () => {
+    expect(starSpecSchema.safeParse({ points: 65, innerRadius: 0.5 }).success).toBe(false);
+  });
+
+  it("rejects non-integer points", () => {
+    expect(starSpecSchema.safeParse({ points: 5.5, innerRadius: 0.5 }).success).toBe(false);
+  });
+});
+
+describe("motionNodeSchema polygon/star cross-validation", () => {
+  const baseNode = (overrides: Record<string, unknown>) => ({
+    id: "shape",
+    kind: "polygon",
+    roles: [],
+    layout: {},
+    style: {},
+    presentation: {},
+    children: [],
+    ...overrides
+  });
+
+  it("accepts kind=polygon with polygon field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({ polygon: { sides: 6 } })).success).toBe(true);
+  });
+
+  it("accepts kind=star with star field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      kind: "star", star: { points: 5, innerRadius: 0.5 }
+    })).success).toBe(true);
+  });
+
+  it("rejects kind=polygon without polygon field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({})).success).toBe(false);
+  });
+
+  it("rejects kind=circle with polygon field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      kind: "circle", polygon: { sides: 6 }
+    })).success).toBe(false);
+  });
+
+  it("rejects kind=polygon with both polygon AND star fields", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      polygon: { sides: 6 }, star: { points: 5, innerRadius: 0.5 }
+    })).success).toBe(false);
+  });
+
+  it("rejects kind=star without star field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({ kind: "star" })).success).toBe(false);
   });
 });

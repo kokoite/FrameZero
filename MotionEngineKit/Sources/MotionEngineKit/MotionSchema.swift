@@ -71,6 +71,8 @@ struct MotionNode: Identifiable, Decodable {
     let fills: [MotionFill]
     let stroke: MotionStrokeSpec?
     let cornerRadii: MotionCornerRadii?
+    let polygon: MotionPolygonSpec?
+    let star: MotionStarSpec?
     let presentation: [String: MotionValue]
     let children: [NodeID]
     let presence: MotionPresence?
@@ -84,6 +86,8 @@ struct MotionNode: Identifiable, Decodable {
         case fills
         case stroke
         case cornerRadii
+        case polygon
+        case star
         case presentation
         case children
         case presence
@@ -99,6 +103,17 @@ struct MotionNode: Identifiable, Decodable {
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         stroke = try container.decodeIfPresent(MotionStrokeSpec.self, forKey: .stroke)
         cornerRadii = try container.decodeIfPresent(MotionCornerRadii.self, forKey: .cornerRadii)
+        polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
+        star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
+        try validatePolygonStarFields(
+            kind: kind,
+            polygon: polygon,
+            star: star,
+            container: container,
+            polygonKey: .polygon,
+            starKey: .star,
+            kindKey: .kind
+        )
         presentation = try container.decodeIfPresent([String: MotionValue].self, forKey: .presentation) ?? [:]
         children = try container.decodeIfPresent([NodeID].self, forKey: .children) ?? []
         presence = try container.decodeIfPresent(MotionPresence.self, forKey: .presence)
@@ -185,6 +200,125 @@ struct MotionCornerRadii: Decodable, Equatable {
         topRight = try c.decodeFiniteNonNegativeDouble(forKey: .topRight)
         bottomLeft = try c.decodeFiniteNonNegativeDouble(forKey: .bottomLeft)
         bottomRight = try c.decodeFiniteNonNegativeDouble(forKey: .bottomRight)
+    }
+}
+
+struct MotionPolygonSpec: Decodable, Equatable {
+    let sides: Int
+    let cornerRadius: Double?
+
+    private enum CodingKeys: String, CodingKey { case sides, cornerRadius }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = try c.decode(Double.self, forKey: .sides)
+        guard raw.isFinite, raw == raw.rounded() else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .sides,
+                in: c,
+                debugDescription: "polygon.sides must be integer"
+            )
+        }
+        let intVal = Int(raw)
+        guard intVal >= 3 && intVal <= 64 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .sides,
+                in: c,
+                debugDescription: "polygon.sides must be in [3, 64]"
+            )
+        }
+        sides = intVal
+        cornerRadius = try c.decodeFiniteNonNegativeDoubleIfPresent(forKey: .cornerRadius)
+    }
+}
+
+struct MotionStarSpec: Decodable, Equatable {
+    let points: Int
+    let innerRadius: Double
+    let cornerRadius: Double?
+
+    private enum CodingKeys: String, CodingKey { case points, innerRadius, cornerRadius }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawPoints = try c.decode(Double.self, forKey: .points)
+        guard rawPoints.isFinite, rawPoints == rawPoints.rounded() else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .points,
+                in: c,
+                debugDescription: "star.points must be integer"
+            )
+        }
+        let intP = Int(rawPoints)
+        guard intP >= 3 && intP <= 64 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .points,
+                in: c,
+                debugDescription: "star.points must be in [3, 64]"
+            )
+        }
+        points = intP
+        let r = try c.decode(Double.self, forKey: .innerRadius)
+        guard r.isFinite, r >= 0, r <= 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .innerRadius,
+                in: c,
+                debugDescription: "star.innerRadius must be in [0, 1]"
+            )
+        }
+        innerRadius = r
+        cornerRadius = try c.decodeFiniteNonNegativeDoubleIfPresent(forKey: .cornerRadius)
+    }
+}
+
+private func validatePolygonStarFields<Key: CodingKey>(
+    kind: MotionNodeKind,
+    polygon: MotionPolygonSpec?,
+    star: MotionStarSpec?,
+    container: KeyedDecodingContainer<Key>,
+    polygonKey: Key,
+    starKey: Key,
+    kindKey: Key
+) throws {
+    switch kind {
+    case .polygon:
+        if polygon == nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: polygonKey,
+                in: container,
+                debugDescription: "kind=polygon requires polygon field"
+            )
+        }
+        if star != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: starKey,
+                in: container,
+                debugDescription: "kind=polygon must not include star field"
+            )
+        }
+    case .star:
+        if star == nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: starKey,
+                in: container,
+                debugDescription: "kind=star requires star field"
+            )
+        }
+        if polygon != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: polygonKey,
+                in: container,
+                debugDescription: "kind=star must not include polygon field"
+            )
+        }
+    default:
+        if polygon != nil || star != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: kindKey,
+                in: container,
+                debugDescription: "polygon/star fields are only allowed when kind is polygon or star"
+            )
+        }
     }
 }
 
@@ -280,6 +414,8 @@ enum MotionNodeKind: String, Decodable {
     case path
     case circle
     case roundedRectangle
+    case polygon
+    case star
 }
 
 struct MotionPresence: Decodable {
@@ -574,6 +710,8 @@ struct MotionParticleSpec: Decodable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let polygon: MotionPolygonSpec?
+    let star: MotionStarSpec?
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -584,6 +722,8 @@ struct MotionParticleSpec: Decodable {
         case layout
         case style
         case fills
+        case polygon
+        case star
         case from
         case to
         case motion
@@ -596,6 +736,17 @@ struct MotionParticleSpec: Decodable {
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
+        star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
+        try validatePolygonStarFields(
+            kind: kind,
+            polygon: polygon,
+            star: star,
+            container: container,
+            polygonKey: .polygon,
+            starKey: .star,
+            kindKey: .kind
+        )
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
         to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
         motion = try container.decode(MotionSpec.self, forKey: .motion)
@@ -652,6 +803,8 @@ struct MotionComponentSpec: Decodable {
     let layout: [String: MotionValue]
     let style: [String: MotionValue]
     let fills: [MotionFill]
+    let polygon: MotionPolygonSpec?
+    let star: MotionStarSpec?
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -663,6 +816,8 @@ struct MotionComponentSpec: Decodable {
         case layout
         case style
         case fills
+        case polygon
+        case star
         case from
         case to
         case motion
@@ -676,6 +831,17 @@ struct MotionComponentSpec: Decodable {
         layout = try container.decodeIfPresent([String: MotionValue].self, forKey: .layout) ?? [:]
         style = try container.decodeIfPresent([String: MotionValue].self, forKey: .style) ?? [:]
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
+        polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
+        star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
+        try validatePolygonStarFields(
+            kind: kind,
+            polygon: polygon,
+            star: star,
+            container: container,
+            polygonKey: .polygon,
+            starKey: .star,
+            kindKey: .kind
+        )
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
         to = try container.decodeIfPresent([String: MotionValue].self, forKey: .to) ?? [:]
         motion = try container.decode(MotionSpec.self, forKey: .motion)

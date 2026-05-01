@@ -8,7 +8,9 @@ export const nodeKinds = [
   "image",
   "path",
   "circle",
-  "roundedRectangle"
+  "roundedRectangle",
+  "polygon",
+  "star"
 ] as const;
 
 export const animatedProperties = [
@@ -112,6 +114,19 @@ export const cornerRadiiSchema = z.object({
 }).strict();
 export type MotionCornerRadii = z.infer<typeof cornerRadiiSchema>;
 
+export const polygonSpecSchema = z.object({
+  sides: z.number().int().min(3).max(64),
+  cornerRadius: nonNegativeNumberSchema.optional()
+}).strict();
+export type MotionPolygonSpec = z.infer<typeof polygonSpecSchema>;
+
+export const starSpecSchema = z.object({
+  points: z.number().int().min(3).max(64),
+  innerRadius: finiteNumberSchema.min(0).max(1),
+  cornerRadius: nonNegativeNumberSchema.optional()
+}).strict();
+export type MotionStarSpec = z.infer<typeof starSpecSchema>;
+
 export const metricValueSchema = z.object({
   metric: metricSchema,
   multiplier: finiteNumberSchema.optional(),
@@ -145,6 +160,26 @@ function requiresLockedAssetPolicy(
   }
 }
 
+function validatePolygonStarFields(
+  data: {
+    kind: z.infer<typeof nodeKindSchema>;
+    polygon?: z.infer<typeof polygonSpecSchema> | undefined;
+    star?: z.infer<typeof starSpecSchema> | undefined;
+  },
+  context: z.RefinementCtx
+) {
+  if (data.kind === "polygon") {
+    if (!data.polygon) context.addIssue({ code: "custom", path: ["polygon"], message: "kind=polygon requires polygon field" });
+    if (data.star) context.addIssue({ code: "custom", path: ["star"], message: "kind=polygon must not include star field" });
+  } else if (data.kind === "star") {
+    if (!data.star) context.addIssue({ code: "custom", path: ["star"], message: "kind=star requires star field" });
+    if (data.polygon) context.addIssue({ code: "custom", path: ["polygon"], message: "kind=star must not include polygon field" });
+  } else {
+    if (data.polygon) context.addIssue({ code: "custom", path: ["polygon"], message: "polygon field only allowed when kind=polygon" });
+    if (data.star) context.addIssue({ code: "custom", path: ["star"], message: "star field only allowed when kind=star" });
+  }
+}
+
 export const motionNodeSchema = z
   .object({
     id: z.string().min(1),
@@ -155,6 +190,8 @@ export const motionNodeSchema = z
     fills: z.array(fillSchema).default([]),
     stroke: strokeSpecSchema.optional(),
     cornerRadii: cornerRadiiSchema.optional(),
+    polygon: polygonSpecSchema.optional(),
+    star: starSpecSchema.optional(),
     presentation: motionValueRecordSchema.default({}),
     children: z.array(z.string().min(1)).default([]),
     presence: z
@@ -166,6 +203,7 @@ export const motionNodeSchema = z
   })
   .superRefine((node, context) => {
     requiresLockedAssetPolicy(node.kind, node.style, context);
+    validatePolygonStarFields(node, context);
   });
 
 export const nodeSelectorSchema = z
@@ -263,6 +301,8 @@ const emittedVisualSpecBaseSchema = z.object({
   fills: z.array(fillSchema).default([]),
   stroke: strokeSpecSchema.optional(),
   cornerRadii: cornerRadiiSchema.optional(),
+  polygon: polygonSpecSchema.optional(),
+  star: starSpecSchema.optional(),
   from: motionValueRecordSchema.default({}),
   to: motionValueRecordSchema.default({}),
   motion: motionSpecSchema,
@@ -273,6 +313,7 @@ const emittedVisualSpecBaseSchema = z.object({
 const emittedVisualSpecSchema = emittedVisualSpecBaseSchema
   .superRefine((spec, context) => {
     requiresLockedAssetPolicy(spec.kind, spec.style, context);
+    validatePolygonStarFields(spec, context);
   });
 
 const spawnedVisualSpecSchema = emittedVisualSpecBaseSchema
@@ -281,6 +322,7 @@ const spawnedVisualSpecSchema = emittedVisualSpecBaseSchema
   })
   .superRefine((spec, context) => {
     requiresLockedAssetPolicy(spec.kind, spec.style, context);
+    validatePolygonStarFields(spec, context);
   });
 
 export const motionActionSchema: z.ZodType<MotionAction> = z.lazy(() =>

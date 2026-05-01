@@ -223,6 +223,47 @@ public struct MotionRuntimeView: View {
                 node: node,
                 drawsBackground: false
             ))
+        case .polygon:
+            guard let spec = node.polygon else { return AnyView(EmptyView()) }
+            let shape = MotionRegularPolygon(
+                sides: spec.sides,
+                cornerRadius: CGFloat(spec.cornerRadius ?? 0)
+            )
+            return AnyView(applyCommonModifiers(
+                MotionFilledShape(
+                    shape: shape,
+                    fills: node.fills,
+                    fallbackStyle: node.style
+                )
+                .overlay {
+                    if let stroke = resolveStroke(node: node) {
+                        strokeOverlay(shape, spec: stroke)
+                    }
+                },
+                node: node,
+                drawsBackground: false
+            ))
+        case .star:
+            guard let spec = node.star else { return AnyView(EmptyView()) }
+            let shape = MotionStarShape(
+                points: spec.points,
+                innerRadius: CGFloat(spec.innerRadius),
+                cornerRadius: CGFloat(spec.cornerRadius ?? 0)
+            )
+            return AnyView(applyCommonModifiers(
+                MotionFilledShape(
+                    shape: shape,
+                    fills: node.fills,
+                    fallbackStyle: node.style
+                )
+                .overlay {
+                    if let stroke = resolveStroke(node: node) {
+                        strokeOverlay(shape, spec: stroke)
+                    }
+                },
+                node: node,
+                drawsBackground: false
+            ))
         }
     }
 
@@ -827,6 +868,74 @@ struct AsymmetricRoundedRectangle: Shape {
         p.closeSubpath()
         return p
     }
+}
+
+struct MotionRegularPolygon: Shape {
+    let sides: Int
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let cx = rect.midX, cy = rect.midY
+        let R = min(rect.width, rect.height) / 2
+        var verts: [CGPoint] = []
+        for i in 0..<sides {
+            let theta = -.pi / 2 + Double(i) * 2 * .pi / Double(sides)
+            verts.append(CGPoint(x: cx + R * CGFloat(cos(theta)), y: cy + R * CGFloat(sin(theta))))
+        }
+        return polylinePath(verts: verts, cornerRadius: cornerRadius)
+    }
+}
+
+struct MotionStarShape: Shape {
+    let points: Int
+    let innerRadius: CGFloat
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let cx = rect.midX, cy = rect.midY
+        let R = min(rect.width, rect.height) / 2
+        let r = R * innerRadius
+        let n = points * 2
+        var verts: [CGPoint] = []
+        for i in 0..<n {
+            let theta = -.pi / 2 + Double(i) * .pi / Double(points)
+            let radius = (i % 2 == 0) ? R : r
+            verts.append(CGPoint(x: cx + radius * CGFloat(cos(theta)), y: cy + radius * CGFloat(sin(theta))))
+        }
+        return polylinePath(verts: verts, cornerRadius: cornerRadius)
+    }
+}
+
+private func polylinePath(verts: [CGPoint], cornerRadius: CGFloat) -> Path {
+    var p = Path()
+    let n = verts.count
+    guard n >= 2 else { return p }
+    if cornerRadius <= 0 {
+        p.move(to: verts[0])
+        for v in verts.dropFirst() { p.addLine(to: v) }
+        p.closeSubpath()
+        return p
+    }
+    func edgeLen(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        hypot(b.x - a.x, b.y - a.y)
+    }
+    var radii: [CGFloat] = []
+    for i in 0..<n {
+        let prev = verts[(i - 1 + n) % n]
+        let curr = verts[i]
+        let next = verts[(i + 1) % n]
+        let r = min(cornerRadius, 0.5 * min(edgeLen(prev, curr), edgeLen(curr, next)))
+        radii.append(r)
+    }
+    let startMid = CGPoint(x: (verts[n - 1].x + verts[0].x) / 2, y: (verts[n - 1].y + verts[0].y) / 2)
+    p.move(to: startMid)
+    for i in 0..<n {
+        let curr = verts[i]
+        let next = verts[(i + 1) % n]
+        p.addArc(tangent1End: curr, tangent2End: next, radius: radii[i])
+    }
+    p.closeSubpath()
+    return p
 }
 
 private struct MotionFilledShape<S: Shape>: View {

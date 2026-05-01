@@ -103,6 +103,40 @@ describe("compileStudioProject", () => {
     expect(result.json).not.toContain('"cornerRadii"');
   });
 
+  it("forwards polygon spec on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.kind = "polygon";
+    project.nodes.card.polygon = { sides: 6, cornerRadius: 4 };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.polygon).toEqual({ sides: 6, cornerRadius: 4 });
+    expect(result.json).toContain('"polygon": {');
+  });
+
+  it("forwards star spec on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.kind = "star";
+    project.nodes.card.star = { points: 5, innerRadius: 0.5 };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.star).toEqual({ points: 5, innerRadius: 0.5 });
+    expect(result.json).toContain('"star": {');
+  });
+
+  it("omits polygon and star when undefined", () => {
+    const result = compileStudioProject(parallelComponentsProject);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("polygon");
+    expect(card).not.toHaveProperty("star");
+    expect(result.json).not.toContain('"polygon"');
+    expect(result.json).not.toContain('"star"');
+  });
+
   it("strips Studio-only component instance metadata from runtime nodes", () => {
     const project = structuredClone(parallelComponentsProject);
     project.nodes.card.componentId = "heroCard";

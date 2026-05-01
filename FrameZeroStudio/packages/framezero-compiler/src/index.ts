@@ -9,6 +9,8 @@ import {
   type MotionStroke,
   type MotionForce,
   type MotionNode,
+  type MotionPolygonSpec,
+  type MotionStarSpec,
   type MotionReduceMotionPolicy,
   type MotionRule,
   type MotionSensitivityLevel,
@@ -48,6 +50,8 @@ export type StudioNode = {
   fills?: MotionFill[];
   stroke?: MotionStroke;
   cornerRadii?: MotionCornerRadii;
+  polygon?: MotionPolygonSpec;
+  star?: MotionStarSpec;
   presentation: Record<string, MotionValue>;
   componentId?: string;
   locked?: boolean;
@@ -181,6 +185,8 @@ function compileNodes(project: StudioProject): MotionNode[] {
     };
     if (node.stroke !== undefined) out.stroke = node.stroke;
     if (node.cornerRadii !== undefined) out.cornerRadii = node.cornerRadii;
+    if (node.polygon !== undefined) out.polygon = node.polygon;
+    if (node.star !== undefined) out.star = node.star;
     return out;
   });
 }
