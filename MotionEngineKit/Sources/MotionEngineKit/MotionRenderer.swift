@@ -264,6 +264,29 @@ public struct MotionRuntimeView: View {
                 node: node,
                 drawsBackground: false
             ))
+        case .line:
+            guard let spec = node.line, var stroke = resolveStroke(node: node) else {
+                return AnyView(EmptyView())
+            }
+            // Lines have no fill region; inside/outside alignment is undefined.
+            stroke = ResolvedStroke(
+                color: stroke.color,
+                width: stroke.width,
+                alignment: .center,
+                dash: stroke.dash,
+                cap: stroke.cap,
+                join: stroke.join,
+                miterLimit: stroke.miterLimit
+            )
+            let shape = MotionLineShape(
+                from: CGPoint(x: spec.from.x, y: spec.from.y),
+                to: CGPoint(x: spec.to.x, y: spec.to.y)
+            )
+            return AnyView(applyCommonModifiers(
+                strokeOverlay(shape, spec: stroke),
+                node: node,
+                drawsBackground: false
+            ))
         }
     }
 
@@ -883,6 +906,18 @@ struct MotionRegularPolygon: Shape {
             verts.append(CGPoint(x: cx + R * CGFloat(cos(theta)), y: cy + R * CGFloat(sin(theta))))
         }
         return polylinePath(verts: verts, cornerRadius: cornerRadius)
+    }
+}
+
+struct MotionLineShape: Shape {
+    let from: CGPoint
+    let to: CGPoint
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: from)
+        p.addLine(to: to)
+        return p
     }
 }
 

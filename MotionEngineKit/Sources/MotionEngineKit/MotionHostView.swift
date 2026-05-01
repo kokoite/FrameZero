@@ -127,7 +127,7 @@ public struct MotionEffectsOverlay: View {
             Circle().fill(backgroundStyle)
         case .roundedRectangle:
             RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
-        case .zstack, .vstack, .hstack, .text, .image, .path, .polygon, .star:
+        case .zstack, .vstack, .hstack, .text, .image, .path, .polygon, .star, .line:
             Circle().fill(backgroundStyle)
         }
     }
@@ -144,7 +144,7 @@ public struct MotionEffectsOverlay: View {
         switch kind {
         case .circle:
             Circle().fill(backgroundStyle)
-        case .roundedRectangle, .zstack, .vstack, .hstack, .path, .polygon, .star:
+        case .roundedRectangle, .zstack, .vstack, .hstack, .path, .polygon, .star, .line:
             RoundedRectangle(cornerRadius: CGFloat(cornerRadius)).fill(backgroundStyle)
         case .text:
             Text(text)

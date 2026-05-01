@@ -73,6 +73,7 @@ struct MotionNode: Identifiable, Decodable {
     let cornerRadii: MotionCornerRadii?
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
+    let line: MotionLineSpec?
     let presentation: [String: MotionValue]
     let children: [NodeID]
     let presence: MotionPresence?
@@ -88,6 +89,7 @@ struct MotionNode: Identifiable, Decodable {
         case cornerRadii
         case polygon
         case star
+        case line
         case presentation
         case children
         case presence
@@ -105,13 +107,18 @@ struct MotionNode: Identifiable, Decodable {
         cornerRadii = try container.decodeIfPresent(MotionCornerRadii.self, forKey: .cornerRadii)
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
-        try validatePolygonStarFields(
+        line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)
+        try validateShapeFields(
             kind: kind,
             polygon: polygon,
             star: star,
+            line: line,
+            stroke: stroke,
+            style: style,
             container: container,
             polygonKey: .polygon,
             starKey: .star,
+            lineKey: .line,
             kindKey: .kind
         )
         presentation = try container.decodeIfPresent([String: MotionValue].self, forKey: .presentation) ?? [:]
@@ -271,13 +278,35 @@ struct MotionStarSpec: Decodable, Equatable {
     }
 }
 
-private func validatePolygonStarFields<Key: CodingKey>(
+struct MotionPoint: Decodable, Equatable {
+    let x: Double
+    let y: Double
+
+    private enum CodingKeys: String, CodingKey { case x, y }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        x = try c.decodeFiniteDouble(forKey: .x)
+        y = try c.decodeFiniteDouble(forKey: .y)
+    }
+}
+
+struct MotionLineSpec: Decodable, Equatable {
+    let from: MotionPoint
+    let to: MotionPoint
+}
+
+private func validateShapeFields<Key: CodingKey>(
     kind: MotionNodeKind,
     polygon: MotionPolygonSpec?,
     star: MotionStarSpec?,
+    line: MotionLineSpec?,
+    stroke: MotionStrokeSpec?,
+    style: [String: MotionValue],
     container: KeyedDecodingContainer<Key>,
     polygonKey: Key,
     starKey: Key,
+    lineKey: Key,
     kindKey: Key
 ) throws {
     switch kind {
@@ -296,6 +325,13 @@ private func validatePolygonStarFields<Key: CodingKey>(
                 debugDescription: "kind=polygon must not include star field"
             )
         }
+        if line != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: lineKey,
+                in: container,
+                debugDescription: "kind=polygon must not include line field"
+            )
+        }
     case .star:
         if star == nil {
             throw DecodingError.dataCorruptedError(
@@ -311,12 +347,48 @@ private func validatePolygonStarFields<Key: CodingKey>(
                 debugDescription: "kind=star must not include polygon field"
             )
         }
-    default:
-        if polygon != nil || star != nil {
+        if line != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: lineKey,
+                in: container,
+                debugDescription: "kind=star must not include line field"
+            )
+        }
+    case .line:
+        if line == nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: lineKey,
+                in: container,
+                debugDescription: "kind=line requires line field"
+            )
+        }
+        if polygon != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: polygonKey,
+                in: container,
+                debugDescription: "kind=line must not include polygon field"
+            )
+        }
+        if star != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: starKey,
+                in: container,
+                debugDescription: "kind=line must not include star field"
+            )
+        }
+        if stroke == nil && (style["strokeWidth"]?.number == nil || style["strokeColor"]?.string == nil) {
             throw DecodingError.dataCorruptedError(
                 forKey: kindKey,
                 in: container,
-                debugDescription: "polygon/star fields are only allowed when kind is polygon or star"
+                debugDescription: "kind=line requires stroke (typed or style.strokeWidth + style.strokeColor)"
+            )
+        }
+    default:
+        if polygon != nil || star != nil || line != nil {
+            throw DecodingError.dataCorruptedError(
+                forKey: kindKey,
+                in: container,
+                debugDescription: "polygon/star/line fields are only allowed when kind is polygon, star, or line"
             )
         }
     }
@@ -416,6 +488,7 @@ enum MotionNodeKind: String, Decodable {
     case roundedRectangle
     case polygon
     case star
+    case line
 }
 
 struct MotionPresence: Decodable {
@@ -712,6 +785,7 @@ struct MotionParticleSpec: Decodable {
     let fills: [MotionFill]
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
+    let line: MotionLineSpec?
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -724,6 +798,7 @@ struct MotionParticleSpec: Decodable {
         case fills
         case polygon
         case star
+        case line
         case from
         case to
         case motion
@@ -738,13 +813,18 @@ struct MotionParticleSpec: Decodable {
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
-        try validatePolygonStarFields(
+        line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)
+        try validateShapeFields(
             kind: kind,
             polygon: polygon,
             star: star,
+            line: line,
+            stroke: nil,
+            style: style,
             container: container,
             polygonKey: .polygon,
             starKey: .star,
+            lineKey: .line,
             kindKey: .kind
         )
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]
@@ -805,6 +885,7 @@ struct MotionComponentSpec: Decodable {
     let fills: [MotionFill]
     let polygon: MotionPolygonSpec?
     let star: MotionStarSpec?
+    let line: MotionLineSpec?
     let from: [String: MotionValue]
     let to: [String: MotionValue]
     let motion: MotionSpec
@@ -818,6 +899,7 @@ struct MotionComponentSpec: Decodable {
         case fills
         case polygon
         case star
+        case line
         case from
         case to
         case motion
@@ -833,13 +915,18 @@ struct MotionComponentSpec: Decodable {
         fills = try container.decodeIfPresent([MotionFill].self, forKey: .fills) ?? []
         polygon = try container.decodeIfPresent(MotionPolygonSpec.self, forKey: .polygon)
         star = try container.decodeIfPresent(MotionStarSpec.self, forKey: .star)
-        try validatePolygonStarFields(
+        line = try container.decodeIfPresent(MotionLineSpec.self, forKey: .line)
+        try validateShapeFields(
             kind: kind,
             polygon: polygon,
             star: star,
+            line: line,
+            stroke: nil,
+            style: style,
             container: container,
             polygonKey: .polygon,
             starKey: .star,
+            lineKey: .line,
             kindKey: .kind
         )
         from = try container.decodeIfPresent([String: MotionValue].self, forKey: .from) ?? [:]

@@ -8,6 +8,7 @@ import {
   type MotionCornerRadii,
   type MotionStroke,
   type MotionForce,
+  type MotionLineSpec,
   type MotionNode,
   type MotionPolygonSpec,
   type MotionStarSpec,
@@ -52,6 +53,7 @@ export type StudioNode = {
   cornerRadii?: MotionCornerRadii;
   polygon?: MotionPolygonSpec;
   star?: MotionStarSpec;
+  line?: MotionLineSpec;
   presentation: Record<string, MotionValue>;
   componentId?: string;
   locked?: boolean;
@@ -187,6 +189,7 @@ function compileNodes(project: StudioProject): MotionNode[] {
     if (node.cornerRadii !== undefined) out.cornerRadii = node.cornerRadii;
     if (node.polygon !== undefined) out.polygon = node.polygon;
     if (node.star !== undefined) out.star = node.star;
+    if (node.line !== undefined) out.line = node.line;
     return out;
   });
 }

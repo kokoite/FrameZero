@@ -127,6 +127,38 @@ describe("compileStudioProject", () => {
     expect(result.json).toContain('"star": {');
   });
 
+  it("forwards line spec on compiled nodes", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.kind = "line";
+    project.nodes.card.line = { from: { x: 0, y: 0 }, to: { x: 20, y: 30 } };
+    project.nodes.card.stroke = { color: "#FF0000", width: 2 };
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card?.line).toEqual({ from: { x: 0, y: 0 }, to: { x: 20, y: 30 } });
+    expect(result.json).toContain('"line": {');
+  });
+
+  it("rejects kind=line without line spec", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.kind = "line";
+    project.nodes.card.stroke = { color: "#FF0000", width: 2 };
+
+    expect(() => compileStudioProject(project)).toThrow();
+  });
+
+  it("omits line when undefined", () => {
+    const project = structuredClone(parallelComponentsProject);
+    project.nodes.card.kind = "circle";
+
+    const result = compileStudioProject(project);
+    const card = result.document.nodes.find((node) => node.id === "card");
+
+    expect(card).not.toHaveProperty("line");
+    expect(result.json).not.toContain('"line"');
+  });
+
   it("omits polygon and star when undefined", () => {
     const result = compileStudioProject(parallelComponentsProject);
     const card = result.document.nodes.find((node) => node.id === "card");

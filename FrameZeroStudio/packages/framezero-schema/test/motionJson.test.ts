@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cornerRadiiSchema, documentUpdatePayloadSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, starSpecSchema, strokeSpecSchema } from "../src/index";
+import { cornerRadiiSchema, documentUpdatePayloadSchema, linePointSchema, lineSpecSchema, makePreviewEnvelope, motionNodeSchema, parseMotionDocument, polygonSpecSchema, previewEnvelopeSchema, safeParseMotionDocument, starSpecSchema, strokeSpecSchema } from "../src/index";
 
 describe("motionDocumentSchema", () => {
   it("accepts reduce motion policy and motion sensitivity fields without defaulting absent keys", () => {
@@ -870,6 +870,74 @@ describe("starSpecSchema", () => {
 
   it("rejects non-integer points", () => {
     expect(starSpecSchema.safeParse({ points: 5.5, innerRadius: 0.5 }).success).toBe(false);
+  });
+});
+
+describe("lineSpecSchema", () => {
+  const line = { from: { x: 0, y: 1 }, to: { x: 20, y: 30 } };
+  const baseNode = (overrides: Record<string, unknown>) => ({
+    id: "shape",
+    kind: "line",
+    roles: [],
+    layout: {},
+    style: {},
+    presentation: {},
+    children: [],
+    ...overrides
+  });
+
+  it("accepts valid linePoint and lineSpec", () => {
+    expect(linePointSchema.safeParse({ x: 0, y: -1 }).success).toBe(true);
+    expect(lineSpecSchema.safeParse(line).success).toBe(true);
+  });
+
+  it("rejects NaN and Infinity in coordinates", () => {
+    expect(lineSpecSchema.safeParse({ ...line, from: { x: Number.NaN, y: 0 } }).success).toBe(false);
+    expect(lineSpecSchema.safeParse({ ...line, to: { x: 1, y: Number.POSITIVE_INFINITY } }).success).toBe(false);
+  });
+
+  it("rejects extra keys (.strict())", () => {
+    expect(linePointSchema.safeParse({ x: 0, y: 1, z: 2 }).success).toBe(false);
+    expect(lineSpecSchema.safeParse({ ...line, extra: 1 }).success).toBe(false);
+  });
+
+  it("accepts kind=line with line and typed stroke", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      line,
+      stroke: { color: "#FF0000", width: 2 }
+    })).success).toBe(true);
+  });
+
+  it("accepts kind=line with line and style stroke fallback", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      line,
+      style: { strokeWidth: 2, strokeColor: "#FF0000" }
+    })).success).toBe(true);
+  });
+
+  it("rejects kind=line without line field", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      stroke: { color: "#FF0000", width: 2 }
+    })).success).toBe(false);
+  });
+
+  it("rejects kind=line with line but no stroke", () => {
+    expect(motionNodeSchema.safeParse(baseNode({ line })).success).toBe(false);
+  });
+
+  it("rejects kind=circle with line", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      kind: "circle",
+      line
+    })).success).toBe(false);
+  });
+
+  it("rejects kind=line with polygon", () => {
+    expect(motionNodeSchema.safeParse(baseNode({
+      line,
+      polygon: { sides: 6 },
+      stroke: { color: "#FF0000", width: 2 }
+    })).success).toBe(false);
   });
 });
 
