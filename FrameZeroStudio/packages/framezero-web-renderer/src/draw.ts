@@ -3,6 +3,7 @@ import { canvasColor } from "./color";
 import { applyInnerShadow, resolveShadow } from "./effects";
 import { applyFills } from "./fills";
 import { pathAsymmetricRoundRect, mapFont, styleString } from "./layout";
+import { pathLine, pathPolygon, pathStar } from "./shapes";
 import { applyStroke } from "./stroke";
 
 const warnedUnsupportedNodes = new Set<string>();
@@ -23,11 +24,17 @@ export function drawNodeShape(ctx: CanvasRenderingContext2D, node: MotionNode, w
     case "text":
       fillText(ctx, node);
       return;
+    case "polygon":
+      fillPolygon(ctx, node, width, height);
+      return;
+    case "star":
+      fillStar(ctx, node, width, height);
+      return;
+    case "line":
+      strokeLine(ctx, node);
+      return;
     case "image":
     case "path":
-    case "polygon":
-    case "star":
-    case "line":
       warnUnsupported(node);
       return;
   }
@@ -85,6 +92,49 @@ function fillRoundedRectangle(ctx: CanvasRenderingContext2D, node: MotionNode, w
   if (shadow?.inset === true) {
     applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
   }
+  applyStroke(ctx, pathFn, node.stroke);
+}
+
+function fillPolygon(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
+  if (!node.polygon) {
+    warnUnsupported(node);
+    return;
+  }
+  const spec = node.polygon;
+  const pathFn = (target: CanvasRenderingContext2D) => pathPolygon(target, spec, width, height);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
+  applyStroke(ctx, pathFn, node.stroke);
+}
+
+function fillStar(ctx: CanvasRenderingContext2D, node: MotionNode, width: number, height: number): void {
+  if (!node.star) {
+    warnUnsupported(node);
+    return;
+  }
+  const spec = node.star;
+  const pathFn = (target: CanvasRenderingContext2D) => pathStar(target, spec, width, height);
+  const shadow = resolveShadow(node);
+  applyFills(ctx, node, width, height, pathFn, shadow);
+  if (shadow?.inset === true) {
+    applyInnerShadow(ctx, pathFn, shadow, { x: 0, y: 0, w: width, h: height });
+  }
+  applyStroke(ctx, pathFn, node.stroke);
+}
+
+function strokeLine(ctx: CanvasRenderingContext2D, node: MotionNode): void {
+  if (!node.line) {
+    warnUnsupported(node);
+    return;
+  }
+  const spec = node.line;
+  const pathFn = (target: CanvasRenderingContext2D) => pathLine(target, spec);
+  // Lines have no fill region; skip applyFills + inner shadow.
+  // Stroke alignment must be center (clip/destination-out are undefined for 0-area shapes);
+  // applyStroke honors whatever the schema gave, but practical authoring uses center.
   applyStroke(ctx, pathFn, node.stroke);
 }
 
